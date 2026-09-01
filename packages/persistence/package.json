@@ -9,7 +9,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude \"src/integration/**/*.integration.test.ts\"",
-    "test:integration": "vitest run src/integration/postgres-numeric.integration.test.ts"
+    "test:integration": "vitest run src/integration"
   },
   "dependencies": {
     "@cal-calc/domain": "workspace:*"
