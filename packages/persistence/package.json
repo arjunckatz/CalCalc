@@ -1,0 +1,16 @@
+{
+  "name": "@cal-calc/persistence",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cal-calc/domain": "workspace:*"
+  }
+}

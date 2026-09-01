@@ -8,6 +8,7 @@ CAL CALC is an AI-native conversational calorie and weight tracker. Conversation
 - `packages/domain` — framework-independent business and domain logic
 - `packages/shared` — small cross-cutting TypeScript types and utilities
 - `packages/config` — shared project configuration helpers
+- `packages/persistence` — lossless domain-to-PostgreSQL storage contracts
 - `supabase` — local Supabase configuration and future version-controlled migrations
 
 ## Prerequisites
