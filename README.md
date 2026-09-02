@@ -40,3 +40,11 @@ Full local Supabase services require a Docker-compatible runtime. Schema changes
 ## Environment files
 
 Copy `.env.example` to `.env` for local values. `.env` files are ignored by Git. Publishable Supabase client values and server-only credentials are documented separately in the example; never expose the service-role key or OpenAI API key to a client.
+
+## License
+
+Copyright © 2026 Arjun Kathpalia. All rights reserved.
+
+CAL CALC is proprietary software. No permission is granted to use, copy,
+modify, distribute, or commercialize this code except with explicit written
+permission. See [LICENSE](./LICENSE).
