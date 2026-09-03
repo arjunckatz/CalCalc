@@ -10,20 +10,21 @@ canonical quantity or nutrition values through JavaScript `Number`.
 
 The mapping unit tests prove string-level precision only; they are not a real
 PostgreSQL round trip. The opt-in `test:integration` script contains real
-PostgreSQL numeric-transport and canonical-ledger invariant tests. It queries
-through `pg` without a custom numeric type parser and asserts that `numeric`
-values arrive as exact strings rather than JavaScript numbers. It also verifies
-that JSONB nutrition decimal strings and absent optional nutrients are
-preserved. Run the integration tests from PowerShell against a running local
-Supabase database with:
+PostgreSQL numeric-transport, canonical-ledger invariant, and FoodEntry
+repository tests. It queries through `pg` without a custom numeric type parser
+and asserts that `numeric` values arrive as exact strings rather than JavaScript
+numbers. It also verifies that JSONB nutrition decimal strings and absent
+optional nutrients are preserved. Run the integration tests from PowerShell
+against a running local Supabase database with:
 
 ```powershell
 $env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 corepack pnpm --filter @cal-calc/persistence test:integration
 ```
 
-These tests do not prove repository behavior. PostgREST/Supabase-client numeric
-transport is not covered yet and must be verified separately.
+The numeric-transport and invariant tests do not by themselves prove repository
+behavior. PostgREST/Supabase-client numeric transport is not covered yet and
+must be verified separately.
 
 The separate `test:integration:rls` script verifies Supabase Auth and RLS with
 two temporary, independently authenticated CAL CALC accounts. One account
@@ -31,6 +32,13 @@ represents one human user; account sharing and sub-users are not supported. The
 test requires `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and
 `SUPABASE_SECRET_KEY`. The secret key is restricted to test fixture setup and
 cleanup and must never ship in client code.
+
+The first production PostgreSQL repository persists FoodEntries through an
+existing caller-supplied query executor. Every read and update scopes by both
+entry ID and user ID, and updates additionally require the expected revision in
+the SQL predicate. The repository exposes no physical delete operation;
+logical deletion is persisted through ordinary revisioned updates. Its real
+PostgreSQL integration coverage remains opt-in through `test:integration`.
 
 Food-entry revisions reject ordinary updates and authenticated users receive no
 revision-history delete policy. A universal delete-rejection trigger is

@@ -105,8 +105,20 @@ export function toFoodEntryRow(
   }
 
   return {
-    id: entry.id,
+    ...toFoodEntryWriteValues(entry),
     user_id: metadata.userId,
+    reported_at: metadata.reportedAt,
+    consumed_at: metadata.consumedAt ?? null,
+    consumed_time_precision: metadata.consumedTimePrecision ?? null,
+    last_operation_id: metadata.lastOperationId ?? null,
+    created_at: metadata.createdAt,
+    updated_at: metadata.updatedAt,
+  };
+}
+
+export function toFoodEntryWriteValues(entry: FoodEntry) {
+  return {
+    id: entry.id,
     food_day_id: entry.foodDayId,
     raw_user_description: entry.rawUserDescription,
     display_name: entry.displayName,
@@ -132,13 +144,7 @@ export function toFoodEntryRow(
         : copyNutrition(entry.estimateHigh),
     status: entry.status,
     revision: entry.revision,
-    reported_at: metadata.reportedAt,
-    consumed_at: metadata.consumedAt ?? null,
-    consumed_time_precision: metadata.consumedTimePrecision ?? null,
     deleted_at: entry.deletedAt ?? null,
-    last_operation_id: metadata.lastOperationId ?? null,
-    created_at: metadata.createdAt,
-    updated_at: metadata.updatedAt,
   };
 }
 
