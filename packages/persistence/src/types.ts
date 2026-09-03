@@ -14,6 +14,42 @@ export type FoodDayCompleteness =
 
 export type ConsumedTimePrecision = "EXACT" | "APPROXIMATE";
 
+export type JsonPrimitive = string | number | boolean | null;
+
+export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
+
+export interface JsonObject {
+  readonly [key: string]: JsonValue;
+}
+
+export type SemanticOperationStatus = "PENDING" | "SUCCEEDED" | "FAILED";
+
+export interface SemanticOperationRow {
+  readonly id: string;
+  readonly user_id: string;
+  readonly operation_key: string;
+  readonly request_fingerprint: string;
+  readonly status: SemanticOperationStatus;
+  readonly result: JsonObject | null;
+  readonly error: JsonObject | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly completed_at: string | null;
+}
+
+export interface PersistedSemanticOperation {
+  readonly id: string;
+  readonly userId: string;
+  readonly operationKey: string;
+  readonly requestFingerprint: string;
+  readonly status: SemanticOperationStatus;
+  readonly result: JsonObject | null;
+  readonly error: JsonObject | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly completedAt: string | null;
+}
+
 export interface FoodDayRow {
   readonly id: string;
   readonly user_id: string;

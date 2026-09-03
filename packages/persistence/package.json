@@ -9,7 +9,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude \"src/integration/**/*.integration.test.ts\"",
-    "test:integration": "vitest run src/integration/postgres-numeric.integration.test.ts src/integration/postgres-ledger-invariants.integration.test.ts src/integration/postgres-food-entry-repository.integration.test.ts",
+    "test:integration": "vitest run src/integration/postgres-numeric.integration.test.ts src/integration/postgres-ledger-invariants.integration.test.ts src/integration/postgres-food-entry-repository.integration.test.ts src/integration/postgres-semantic-operation-repository.integration.test.ts",
     "test:integration:rls": "vitest run src/integration/supabase-rls.integration.test.ts"
   },
   "dependencies": {

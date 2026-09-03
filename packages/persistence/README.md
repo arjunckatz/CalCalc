@@ -40,6 +40,12 @@ the SQL predicate. The repository exposes no physical delete operation;
 logical deletion is persisted through ordinary revisioned updates. Its real
 PostgreSQL integration coverage remains opt-in through `test:integration`.
 
+Durable semantic operations use a focused PostgreSQL repository with
+`userId + operationKey` as the idempotency scope. Atomic claims replay an
+existing operation only when its request fingerprint matches; mismatches are
+rejected. Completion permits only `PENDING` to `SUCCEEDED` or `FAILED`, and the
+real PostgreSQL repository tests remain opt-in through `test:integration`.
+
 Food-entry revisions reject ordinary updates and authenticated users receive no
 revision-history delete policy. A universal delete-rejection trigger is
 intentionally omitted so a future explicitly privileged privacy-purge workflow
