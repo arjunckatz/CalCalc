@@ -46,6 +46,13 @@ existing operation only when its request fingerprint matches; mismatches are
 rejected. Completion permits only `PENDING` to `SUCCEEDED` or `FAILED`, and the
 real PostgreSQL repository tests remain opt-in through `test:integration`.
 
+Exactly-once FoodEntry creation claims the semantic operation, creates the
+FoodEntry, and records semantic success on one transaction-bound PostgreSQL
+executor. Successful same-fingerprint retries replay the canonical FoodEntry
+instead of inserting a duplicate. Any failure in the new-operation path rolls
+back the operation claim and FoodEntry mutation together. Real PostgreSQL
+coverage for this workflow remains opt-in through `test:integration`.
+
 Food-entry revisions reject ordinary updates and authenticated users receive no
 revision-history delete policy. A universal delete-rejection trigger is
 intentionally omitted so a future explicitly privileged privacy-purge workflow

@@ -19,6 +19,7 @@ export interface CreateFoodEntryRecord {
   readonly entry: FoodEntry;
   readonly consumedAt?: string;
   readonly consumedTimePrecision?: ConsumedTimePrecision;
+  readonly lastOperationId?: string;
 }
 
 export interface UpdateFoodEntryRecord {
@@ -79,14 +80,19 @@ export class PostgresFoodEntryRepository {
          revision,
          deleted_at,
          consumed_at,
-         consumed_time_precision
+         consumed_time_precision,
+         last_operation_id
        ) values (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
          $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
-         $22, $23
+         $22, $23, $24
        )
        returning ${foodEntryResultColumns}`,
-      [...writeParameters(input.userId, values), ...consumedTime],
+      [
+        ...writeParameters(input.userId, values),
+        ...consumedTime,
+        input.lastOperationId ?? null,
+      ],
     );
     const row = firstRow<FoodEntryRow>(result.rows);
     if (row === undefined) {

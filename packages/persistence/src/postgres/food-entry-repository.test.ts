@@ -65,13 +65,21 @@ describe("PostgresFoodEntryRepository", () => {
     });
     expect(executor.calls[0]?.values[21]).toBeNull();
     expect(executor.calls[0]?.values[22]).toBeNull();
+    expect(executor.calls[0]?.values[23]).toBeNull();
   });
 
-  it("creates with paired consumed-time metadata", async () => {
+  it("creates with paired consumed-time metadata and operation linkage", async () => {
     const entry = testEntry();
     const consumedAt = "2026-09-02T14:30:00.000Z";
+    const lastOperationId = "40000000-0000-4000-8000-000000000001";
     const executor = new ScriptedExecutor([
-      [rowFor(entry, { consumedAt, consumedTimePrecision: "APPROXIMATE" })],
+      [
+        rowFor(
+          entry,
+          { consumedAt, consumedTimePrecision: "APPROXIMATE" },
+          lastOperationId,
+        ),
+      ],
     ]);
     const repository = new PostgresFoodEntryRepository(executor);
 
@@ -80,12 +88,15 @@ describe("PostgresFoodEntryRepository", () => {
       entry,
       consumedAt,
       consumedTimePrecision: "APPROXIMATE",
+      lastOperationId,
     });
 
     expect(created.consumedAt).toBe(consumedAt);
     expect(created.consumedTimePrecision).toBe("APPROXIMATE");
+    expect(created.lastOperationId).toBe(lastOperationId);
     expect(executor.calls[0]?.values[21]).toBe(consumedAt);
     expect(executor.calls[0]?.values[22]).toBe("APPROXIMATE");
+    expect(executor.calls[0]?.values[23]).toBe(lastOperationId);
   });
 
   it("rejects unpaired consumed-time metadata before executing SQL", async () => {
@@ -220,11 +231,13 @@ function rowFor(
     readonly consumedAt: string;
     readonly consumedTimePrecision: "EXACT" | "APPROXIMATE";
   } | null = null,
+  lastOperationId?: string,
 ) {
   return toFoodEntryRow(entry, {
     userId,
     reportedAt: timestamp,
     ...(consumedTime ?? {}),
+    ...(lastOperationId === undefined ? {} : { lastOperationId }),
     createdAt: timestamp,
     updatedAt: timestamp,
   });

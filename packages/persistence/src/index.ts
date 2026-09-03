@@ -6,6 +6,13 @@ export {
   toFoodEntryRow,
 } from "./mapping.js";
 export {
+  createFoodEntryExactlyOnce,
+  CreateFoodEntryIntegrityError,
+  type CreateFoodEntryExactlyOnceInput,
+  type CreateFoodEntryExactlyOnceResult,
+  type CreateFoodEntryIntegrityReason,
+} from "./postgres/create-food-entry-exactly-once.js";
+export {
   FoodEntryNotFoundError,
   FoodEntryRevisionConflictError,
   PostgresFoodEntryRepository,
@@ -24,6 +31,7 @@ export {
   type MarkSemanticOperationSucceededInput,
   type SemanticOperationClaim,
 } from "./postgres/semantic-operation-repository.js";
+export type { PostgresTransactionRunner } from "./postgres/transaction.js";
 export type {
   ConsumedTimePrecision,
   FoodDayCompleteness,
