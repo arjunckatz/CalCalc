@@ -41,8 +41,25 @@ export function toFoodDayRow(
   },
 ): FoodDayRow {
   return {
-    id: foodDay.id,
+    ...toFoodDayWriteValues(foodDay, metadata),
     user_id: metadata.userId,
+    opened_at: metadata.openedAt,
+    created_at: metadata.createdAt,
+    updated_at: metadata.updatedAt,
+  };
+}
+
+export function toFoodDayWriteValues(
+  foodDay: FoodDay,
+  metadata: {
+    readonly completeness: FoodDayCompleteness;
+    readonly localDate?: string;
+    readonly timezone?: string;
+    readonly closedAt?: string;
+  },
+) {
+  return {
+    id: foodDay.id,
     status: foodDay.status,
     completeness: metadata.completeness,
     calorie_target: foodDay.calorieTarget,
@@ -51,10 +68,7 @@ export function toFoodDayRow(
     goal_version_id: foodDay.goalVersionId ?? null,
     local_date: metadata.localDate ?? null,
     timezone: metadata.timezone ?? null,
-    opened_at: metadata.openedAt,
     closed_at: metadata.closedAt ?? null,
-    created_at: metadata.createdAt,
-    updated_at: metadata.updatedAt,
   };
 }
 

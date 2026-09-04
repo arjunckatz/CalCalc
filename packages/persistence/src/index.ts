@@ -13,6 +13,12 @@ export {
   type CreateFoodEntryIntegrityReason,
 } from "./postgres/create-food-entry-exactly-once.js";
 export {
+  FoodDayNotFoundError,
+  PostgresFoodDayRepository,
+  type CreateFoodDayRecord,
+  type UpdateFoodDayRecord,
+} from "./postgres/food-day-repository.js";
+export {
   FoodEntryNotFoundError,
   FoodEntryRevisionConflictError,
   PostgresFoodEntryRepository,

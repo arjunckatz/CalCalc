@@ -53,6 +53,12 @@ instead of inserting a duplicate. Any failure in the new-operation path rolls
 back the operation claim and FoodEntry mutation together. Real PostgreSQL
 coverage for this workflow remains opt-in through `test:integration`.
 
+The PostgreSQL FoodDay repository creates, loads, and updates canonical logical
+days with ownership-scoped predicates. Local-date lookup returns every matching
+FoodDay in stable opened-time and ID order; persistence does not select an
+active day, enforce one day per date, or apply midnight rollover policy. Its
+real PostgreSQL coverage remains opt-in through `test:integration`.
+
 Food-entry revisions reject ordinary updates and authenticated users receive no
 revision-history delete policy. A universal delete-rejection trigger is
 intentionally omitted so a future explicitly privileged privacy-purge workflow
