@@ -38,6 +38,13 @@ export {
   type SemanticOperationClaim,
 } from "./postgres/semantic-operation-repository.js";
 export type { PostgresTransactionRunner } from "./postgres/transaction.js";
+export {
+  updateFoodEntryExactlyOnce,
+  UpdateFoodEntryIntegrityError,
+  type UpdateFoodEntryExactlyOnceInput,
+  type UpdateFoodEntryExactlyOnceResult,
+  type UpdateFoodEntryIntegrityReason,
+} from "./postgres/update-food-entry-exactly-once.js";
 export type {
   ConsumedTimePrecision,
   FoodDayCompleteness,

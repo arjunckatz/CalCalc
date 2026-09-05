@@ -53,6 +53,14 @@ instead of inserting a duplicate. Any failure in the new-operation path rolls
 back the operation claim and FoodEntry mutation together. Real PostgreSQL
 coverage for this workflow remains opt-in through `test:integration`.
 
+Exactly-once FoodEntry updates combine the semantic claim, optimistic update,
+and success completion in one transaction. Revision conflicts remain
+authoritative; successful retries replay without reapplying the update. An
+old operation's replay returns the current canonical FoodEntry while retaining
+that operation's applied revision. New-operation failures roll back the claim
+and mutation together. Real PostgreSQL coverage remains opt-in through
+`test:integration`.
+
 The PostgreSQL FoodDay repository creates, loads, and updates canonical logical
 days with ownership-scoped predicates. Local-date lookup returns every matching
 FoodDay in stable opened-time and ID order; persistence does not select an

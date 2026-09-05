@@ -26,6 +26,8 @@ export interface UpdateFoodEntryRecord {
   readonly userId: string;
   readonly expectedRevision: number;
   readonly entry: FoodEntry;
+  /** When omitted, this update has no operation linkage. */
+  readonly lastOperationId?: string;
 }
 
 export class FoodEntryNotFoundError extends Error {
@@ -138,12 +140,17 @@ export class PostgresFoodEntryRepository {
            estimate_high = $18,
            status = $19,
            revision = $20,
-           deleted_at = $21
+           deleted_at = $21,
+           last_operation_id = $23::uuid
        where id = $1
          and user_id = $2
          and revision = $22
        returning ${foodEntryResultColumns}`,
-      [...writeParameters(input.userId, values), input.expectedRevision],
+      [
+        ...writeParameters(input.userId, values),
+        input.expectedRevision,
+        input.lastOperationId ?? null,
+      ],
     );
     const row = firstRow<FoodEntryRow>(result.rows);
     if (row !== undefined) return fromFoodEntryRow(row);

@@ -142,7 +142,7 @@ describe("PostgresFoodEntryRepository", () => {
     expect(executor.calls[1]?.values).toEqual([entryId, otherUserId]);
   });
 
-  it("updates through an ownership and expected-revision predicate", async () => {
+  it("updates through an ownership and expected-revision predicate and clears omitted linkage", async () => {
     const updatedEntry = successful(
       changeFoodEntryStatus(testEntry(), {
         expectedRevision: 1,
@@ -159,6 +159,7 @@ describe("PostgresFoodEntryRepository", () => {
     });
 
     expect(updated.entry).toEqual(updatedEntry);
+    expect(updated).not.toHaveProperty("lastOperationId");
     const call = executor.calls[0];
     expect(normalizeSql(call?.queryText)).toContain(
       "where id = $1 and user_id = $2 and revision = $22",
@@ -166,6 +167,45 @@ describe("PostgresFoodEntryRepository", () => {
     expect(call?.values[1]).toBe(userId);
     expect(call?.values[19]).toBe(2);
     expect(call?.values[21]).toBe(1);
+    expect(call?.values[22]).toBeNull();
+    expect(normalizeSql(call?.queryText)).toContain(
+      "last_operation_id = $23::uuid",
+    );
+    expect(executor.calls).toHaveLength(1);
+  });
+
+  it("sets operation linkage in the same optimistic update and hydrates it", async () => {
+    const updatedEntry = successful(
+      changeFoodEntryStatus(testEntry(), {
+        expectedRevision: 1,
+        status: "PLANNED",
+      }),
+    );
+    const lastOperationId = "40000000-0000-4000-8000-000000000002";
+    const executor = new ScriptedExecutor([
+      [rowFor(updatedEntry, null, lastOperationId)],
+    ]);
+    const repository = new PostgresFoodEntryRepository(executor);
+
+    const updated = await repository.update({
+      userId,
+      expectedRevision: 1,
+      entry: updatedEntry,
+      lastOperationId,
+    });
+
+    expect(updated.entry).toEqual(updatedEntry);
+    expect(updated.lastOperationId).toBe(lastOperationId);
+    expect(executor.calls).toHaveLength(1);
+    const call = executor.calls[0];
+    expect(normalizeSql(call?.queryText)).toContain(
+      "last_operation_id = $23::uuid",
+    );
+    expect(normalizeSql(call?.queryText)).toContain(
+      "where id = $1 and user_id = $2 and revision = $22",
+    );
+    expect(call?.values[21]).toBe(1);
+    expect(call?.values[22]).toBe(lastOperationId);
   });
 
   it("reports a same-user stale revision without an ID-only fallback query", async () => {
