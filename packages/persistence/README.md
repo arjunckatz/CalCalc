@@ -76,6 +76,13 @@ Calendar midnight, local date, and timezone do not select or create a day.
 Resolution is read-only; real PostgreSQL coverage is opt-in through
 `test:integration`.
 
+Exactly-once FoodDay creation executes only after the caller has decided a new
+logical day is needed. It claims, creates, and records success in one
+transaction; successful retries replay instead of duplicating. Different
+semantic actions may create days with the same local date. Failed new creation
+rolls back the semantic claim too. No midnight or New Day inference is applied.
+Real PostgreSQL coverage remains opt-in through `test:integration`.
+
 Food-entry revisions reject ordinary updates and authenticated users receive no
 revision-history delete policy. A universal delete-rejection trigger is
 intentionally omitted so a future explicitly privileged privacy-purge workflow

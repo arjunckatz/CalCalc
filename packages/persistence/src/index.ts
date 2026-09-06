@@ -6,6 +6,13 @@ export {
   toFoodEntryRow,
 } from "./mapping.js";
 export {
+  createFoodDayExactlyOnce,
+  CreateFoodDayIntegrityError,
+  type CreateFoodDayExactlyOnceInput,
+  type CreateFoodDayExactlyOnceResult,
+  type CreateFoodDayIntegrityReason,
+} from "./postgres/create-food-day-exactly-once.js";
+export {
   createFoodEntryExactlyOnce,
   CreateFoodEntryIntegrityError,
   type CreateFoodEntryExactlyOnceInput,
