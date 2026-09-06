@@ -135,6 +135,41 @@ describe("PostgresFoodDayRepository", () => {
     expect(executor.calls[0]?.values).toEqual([userId, localDate]);
   });
 
+  it("returns all owned OPEN and PROVISIONAL candidates in deterministic descending order", async () => {
+    const older = { ...testFoodDay(firstDayId), status: "OPEN" as const };
+    const newer = testFoodDay(secondDayId);
+    const executor = new ScriptedExecutor([
+      [foodDayRow(newer, { openedAt: laterOpenedAt }), foodDayRow(older)],
+    ]);
+    const repository = new PostgresFoodDayRepository(executor);
+
+    const found = await repository.findNonClosed(userId);
+
+    expect(found.map(({ foodDay }) => foodDay)).toEqual([newer, older]);
+    expect(found.map((day) => day.userId)).toEqual([userId, userId]);
+    expect(found.map((day) => day.openedAt)).toEqual([laterOpenedAt, openedAt]);
+    expect(found[0]?.foodDay.calorieTarget).toBe("2100.125");
+    expect(found[1]?.foodDay.proteinTarget).toBe("120.005");
+    expect(executor.calls).toHaveLength(1);
+    const call = executor.calls[0];
+    const sql = normalizeSql(call?.queryText);
+    expect(sql).toContain(
+      "where user_id = $1 and status in ('OPEN', 'PROVISIONAL') order by opened_at desc, id desc",
+    );
+    expect(sql).not.toContain("'CLOSED'");
+    expect(sql).not.toMatch(/\blimit\b/);
+    expect(call?.values).toEqual([userId]);
+  });
+
+  it("returns an empty list when the user has no non-closed days", async () => {
+    const executor = new ScriptedExecutor([[]]);
+    const repository = new PostgresFoodDayRepository(executor);
+
+    expect(await repository.findNonClosed(otherUserId)).toEqual([]);
+    expect(executor.calls).toHaveLength(1);
+    expect(executor.calls[0]?.values).toEqual([otherUserId]);
+  });
+
   it("updates the complete canonical state without inventing revisioning", async () => {
     const foodDay = createFoodDay({
       id: firstDayId,

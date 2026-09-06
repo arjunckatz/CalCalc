@@ -67,6 +67,15 @@ FoodDay in stable opened-time and ID order; persistence does not select an
 active day, enforce one day per date, or apply midnight rollover policy. Its
 real PostgreSQL coverage remains opt-in through `test:integration`.
 
+Conservative FoodDay target resolution is separate from repository queries.
+Explicit IDs resolve ownership-scoped, including CLOSED days, and missing IDs
+never fall back. Implicit targeting resolves only a sole OPEN/PROVISIONAL day;
+no candidates returns NONE and multiple candidates surface AMBIGUOUS with all
+candidates instead of guessing. CLOSED days require explicit targeting.
+Calendar midnight, local date, and timezone do not select or create a day.
+Resolution is read-only; real PostgreSQL coverage is opt-in through
+`test:integration`.
+
 Food-entry revisions reject ordinary updates and authenticated users receive no
 revision-history delete policy. A universal delete-rejection trigger is
 intentionally omitted so a future explicitly privileged privacy-purge workflow

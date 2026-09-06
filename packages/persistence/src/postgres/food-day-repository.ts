@@ -86,6 +86,18 @@ export class PostgresFoodDayRepository {
     return result.rows.map((row) => fromFoodDayRow(parseFoodDayRow(row)));
   }
 
+  async findNonClosed(userId: string): Promise<PersistedFoodDay[]> {
+    const result = await this.executor.query(
+      `select ${foodDayResultColumns}
+       from public.food_days
+       where user_id = $1
+         and status in ('OPEN', 'PROVISIONAL')
+       order by opened_at desc, id desc`,
+      [userId],
+    );
+    return result.rows.map((row) => fromFoodDayRow(parseFoodDayRow(row)));
+  }
+
   async update(input: UpdateFoodDayRecord): Promise<PersistedFoodDay> {
     const values = toFoodDayWriteValues(input.foodDay, input);
     const result = await this.executor.query(

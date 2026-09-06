@@ -45,6 +45,11 @@ export {
   type UpdateFoodEntryExactlyOnceResult,
   type UpdateFoodEntryIntegrityReason,
 } from "./postgres/update-food-entry-exactly-once.js";
+export {
+  resolveFoodDayTarget,
+  type ResolveFoodDayTargetInput,
+  type ResolveFoodDayTargetResult,
+} from "./resolve-food-day-target.js";
 export type {
   ConsumedTimePrecision,
   FoodDayCompleteness,
