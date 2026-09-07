@@ -8,11 +8,17 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --exclude \"src/integration/**/*.integration.test.ts\"",
+    "test:integration": "vitest run src/integration/postgres-runtime.integration.test.ts"
   },
   "dependencies": {
     "@cal-calc/config": "workspace:*",
     "@cal-calc/domain": "workspace:*",
-    "@cal-calc/shared": "workspace:*"
+    "@cal-calc/persistence": "workspace:*",
+    "@cal-calc/shared": "workspace:*",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
   }
 }

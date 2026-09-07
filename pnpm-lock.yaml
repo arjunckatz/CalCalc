@@ -41,9 +41,19 @@ importers:
       '@cal-calc/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@cal-calc/persistence':
+        specifier: workspace:*
+        version: link:../../packages/persistence
       '@cal-calc/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
 
   packages/config: {}
 
