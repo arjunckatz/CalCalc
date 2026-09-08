@@ -36,7 +36,7 @@ corepack pnpm --filter @cal-calc/api test:integration
 ```
 
 This direct PostgreSQL suite does not prove RLS; existing Supabase Auth/RLS tests
-remain separate. HTTP routing and OpenAI integration are not implemented here.
+remain separate. OpenAI integration is not implemented here.
 This is application wiring, not a deployed API.
 
 ## Authenticated identity
@@ -63,9 +63,9 @@ reason codes replace SDK failures without retaining potentially sensitive causes
 
 Ordinary authentication performs no application database lookup or profile
 provisioning. Verified API identity does **not** install Supabase RLS context on
-the privileged PostgreSQL pool. Future application calls must pass verified
+the privileged PostgreSQL pool. Application calls must pass verified
 `identity.userId` into ownership-scoped persistence methods; existing RLS tests
-remain separate. There is no HTTP middleware, route, or request-body boundary yet.
+remain separate. The read-only HTTP boundary below now uses this identity.
 Revocation policy, custom authorization, and refresh-token flows are outside this slice.
 
 ### Opt-in local Supabase Auth test
@@ -87,4 +87,66 @@ corepack pnpm --filter @cal-calc/api test:integration:auth
 
 Keep keys in the local environment; do not paste credentials into chat or source.
 The existing `test:integration` command still runs only the PostgreSQL runtime
-suite. Both host suites remain excluded from normal `corepack pnpm check`.
+suite. All host suites remain excluded from normal `corepack pnpm check`.
+
+## Read-only HTTP boundary
+
+`createApiApp({ authVerifier, postgres })` constructs an independent Fastify app;
+pass the production verifier and `runtime.pool` as the PostgreSQL executor.
+It reads no environment variables, creates no pool/client, and never starts a
+server on import or construction. There is no production TCP listen/bootstrap yet.
+The caller owns shutdown: `await app.close()`, then `await runtime.close()`.
+Fastify logging is disabled. No auth/framework plugins are installed.
+
+The only product endpoint is `GET /v1/food-days/:foodDayId`. A small reusable
+authenticated-handler wrapper calls the existing M3B verification boundary and
+passes only `{ userId }` as identity to the handler. It rejects duplicate
+Authorization headers and removes their parsed/raw header copies before
+downstream handling; it does not attach tokens to request state. Ownership never
+comes from query/body/route user IDs or `X-User-Id`.
+
+After authentication, the handler validates the UUID-shaped ID and calls
+`PostgresFoodDayRepository.findById(identity.userId, foodDayId)`. This is one
+ownership-scoped SELECT through the injected executor, without a transaction.
+This is application ownership enforcement, **not** proof of PostgreSQL RLS.
+
+A successful response is a flat, explicitly mapped DTO with exactly:
+`id`, `status`, `completeness`, `calorieTarget`, `proteinTarget`, `localDate`,
+`timezone`, `openedAt`, `closedAt`, `createdAt`, and `updatedAt`.
+Targets remain canonical decimal strings. Missing `localDate`, `timezone`, and
+`closedAt` are explicit JSON `null`; present dates/timestamps remain strings.
+No `userId`, goal-version ID, maintenance snapshot, or persistence object is exposed.
+
+Errors use `{ "error": { "code": "...", "message": "..." } }` with fixed text:
+
+- Missing/malformed/invalid credentials: 401 `UNAUTHENTICATED`.
+- Malformed UUID after authentication: 400 `INVALID_FOOD_DAY_ID`.
+- Missing or cross-account day: identical 404 `NOT_FOUND`.
+- Unexpected verifier/persistence/server failure: 500 `INTERNAL_ERROR`.
+
+No SDK/SQL messages, credentials, or stacks are returned. Unknown routes also use
+the sanitized 404 shape. HTTP mutations, operation keys, and request fingerprints
+are intentionally deferred until trusted mutation/idempotency ownership is designed.
+
+### Opt-in HTTP integration test
+
+Normal tests use real Fastify `app.inject()` and narrow verifier/executor fakes;
+they require no host services or listening port. `test:integration:http` instead
+uses real local Supabase Auth, the production verifier/runtime/app, and the real
+FoodDay repository, still through injection with no TCP listen. It creates two
+randomized Auth users, fixture profiles and FoodDays, verifies own reads,
+bidirectional cross-account 404s, irrelevant spoofed user IDs, missing/tampered
+token 401s, and malformed UUID 400s. Cleanup removes FoodDays, profiles, then Auth
+users, and attempts both app and pool shutdown even if cleanup fails.
+
+With `SUPABASE_PUBLISHABLE_KEY` and fixture-only `SUPABASE_SECRET_KEY` already set
+locally in PowerShell:
+
+```powershell
+$env:SUPABASE_URL = "http://127.0.0.1:54321"
+$env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+corepack pnpm --filter @cal-calc/api test:integration:http
+```
+
+Keep credentials local. The existing PostgreSQL and Auth integration scripts are
+unchanged. This suite is not a deployment, load test, or RLS test.

@@ -22,6 +22,8 @@ export {
   type PostgresRuntimeConfig,
 } from "./postgres/runtime.js";
 export { PostgresPoolTransactionRunner } from "./postgres/transaction-runner.js";
+export { createApiApp, type ApiAppDependencies } from "./http/app.js";
+export type { FoodDayDto } from "./http/food-day-dto.js";
 
 export function describeFoundation(): NonEmptyArray<string> {
   return [normalizeDecimal("1"), environmentVariableNames.supabaseUrl];
