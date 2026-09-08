@@ -100,10 +100,12 @@ Fastify logging is disabled. No auth/framework plugins are installed.
 
 The only product endpoint is `GET /v1/food-days/:foodDayId`. A small reusable
 authenticated-handler wrapper calls the existing M3B verification boundary and
-passes only `{ userId }` as identity to the handler. It rejects duplicate
-Authorization headers and removes their parsed/raw header copies before
-downstream handling; it does not attach tokens to request state. Ownership never
-comes from query/body/route user IDs or `X-User-Id`.
+passes only `{ userId }` as identity to the handler. It reads raw header pairs
+without mutation and rejects duplicate Authorization occurrences, regardless of
+header-name casing. The transport header remains part of the request lifecycle;
+the token is not copied into custom application state or promoted into identity.
+The verified JWT subject is the sole ownership identity, never query/body/route
+user IDs or `X-User-Id`. Logging remains disabled; no token-erasure guarantee is made.
 
 After authentication, the handler validates the UUID-shaped ID and calls
 `PostgresFoodDayRepository.findById(identity.userId, foodDayId)`. This is one
@@ -120,10 +122,15 @@ No `userId`, goal-version ID, maintenance snapshot, or persistence object is exp
 Errors use `{ "error": { "code": "...", "message": "..." } }` with fixed text:
 
 - Missing/malformed/invalid credentials: 401 `UNAUTHENTICATED`.
+- Malformed URL encoding rejected by the router: 400 `INVALID_REQUEST`.
+- Excessive route-parameter length rejected by the router: 414 `URI_TOO_LONG`.
 - Malformed UUID after authentication: 400 `INVALID_FOOD_DAY_ID`.
 - Missing or cross-account day: identical 404 `NOT_FOUND`.
 - Unexpected verifier/persistence/server failure: 500 `INTERNAL_ERROR`.
 
+Router URL errors use fixed JSON responses without reflecting the original path,
+and are rejected before authentication or PostgreSQL access. A normally parsed
+route with a non-UUID ID still uses `INVALID_FOOD_DAY_ID` after authentication.
 No SDK/SQL messages, credentials, or stacks are returned. Unknown routes also use
 the sanitized 404 shape. HTTP mutations, operation keys, and request fingerprints
 are intentionally deferred until trusted mutation/idempotency ownership is designed.

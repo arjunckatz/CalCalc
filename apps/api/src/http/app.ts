@@ -1,3 +1,5 @@
+import type { ServerResponse } from "node:http";
+
 import {
   PostgresFoodDayRepository,
   type PostgresExecutor,
@@ -22,7 +24,18 @@ const uuidPattern =
 export function createApiApp(
   dependencies: ApiAppDependencies,
 ): FastifyInstance {
-  const app = Fastify({ logger: false, exposeHeadRoutes: false });
+  const app = Fastify({
+    logger: false,
+    exposeHeadRoutes: false,
+    routerOptions: {
+      onBadUrl: (_path, _request, response) => {
+        sendRouterError(response, 400);
+      },
+      onMaxParamLength: (_path, _request, response) => {
+        sendRouterError(response, 414);
+      },
+    },
+  });
   const foodDays = new PostgresFoodDayRepository(dependencies.postgres);
 
   app.setErrorHandler((error, _request, reply) => {
@@ -72,4 +85,20 @@ export function createApiApp(
     ),
   );
   return app;
+}
+
+function sendRouterError(
+  response: ServerResponse,
+  statusCode: 400 | 414,
+): void {
+  const error =
+    statusCode === 400
+      ? { code: "INVALID_REQUEST", message: "Invalid request." }
+      : { code: "URI_TOO_LONG", message: "Request URI is too long." };
+  const body = JSON.stringify({ error });
+  response.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+  });
+  response.end(body);
 }

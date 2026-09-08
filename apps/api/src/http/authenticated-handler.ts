@@ -23,25 +23,29 @@ export function authenticatedHandler<Route extends RouteGenericInterface>(
     request: FastifyRequest<Route>,
     reply: FastifyReply,
   ): Promise<unknown> => {
-    const authorization = request.headers.authorization;
-    delete request.headers.authorization;
-    // Node can collapse duplicate Authorization headers. Reject ambiguity and
-    // remove transport copies so downstream handlers receive identity, not tokens.
-    const rawHeaders = request.raw.rawHeaders;
-    let authorizationCount = 0;
-    for (let index = rawHeaders.length - 2; index >= 0; index -= 2) {
-      if (rawHeaders[index]?.toLowerCase() === "authorization") {
-        authorizationCount += 1;
-        rawHeaders.splice(index, 2);
-      }
-    }
-    if (authorizationCount > 1) {
-      throw new AuthenticationError("MALFORMED_AUTHORIZATION");
-    }
     const identity = await authenticateAuthorizationHeader(
       verifier,
-      authorization,
+      readSingleAuthorizationHeader(request),
     );
     return handler(identity, request, reply);
   };
+}
+
+function readSingleAuthorizationHeader(
+  request: Pick<FastifyRequest, "raw">,
+): string | undefined {
+  // Raw pairs preserve duplicate occurrences that Node's parsed headers collapse.
+  const rawHeaders = request.raw.rawHeaders;
+  let authorization: string | undefined;
+  let occurrences = 0;
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    if (rawHeaders[index]?.toLowerCase() === "authorization") {
+      occurrences += 1;
+      if (occurrences > 1) {
+        throw new AuthenticationError("MALFORMED_AUTHORIZATION");
+      }
+      authorization = rawHeaders[index + 1];
+    }
+  }
+  return authorization;
 }

@@ -172,17 +172,22 @@ describe("GET /v1/food-days/:foodDayId", () => {
     },
   );
 
-  it("rejects duplicate Authorization headers instead of trusting Node's collapsed value", async () => {
-    const { app, authVerifier, postgres } = fixture();
-    const response = await app.inject({
-      url: `/v1/food-days/${dayA}`,
-      headers: { Authorization: ["Bearer token-a", "Bearer token-b"] },
-    });
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toEqual(unauthenticated);
-    expect(authVerifier.verifyAccessToken).not.toHaveBeenCalled();
-    expect(postgres.query).not.toHaveBeenCalled();
-  });
+  it.each(["Authorization", "aUtHoRiZaTiOn"])(
+    "rejects duplicate %s headers instead of trusting Node's collapsed value",
+    async (headerName) => {
+      const { app, authVerifier, postgres } = fixture();
+      const response = await app.inject({
+        url: `/v1/food-days/${dayA}`,
+        headers: { [headerName]: ["Bearer token-a", "Bearer token-b"] },
+      });
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toEqual(unauthenticated);
+      expect(response.body).not.toContain("token-a");
+      expect(response.body).not.toContain("token-b");
+      expect(authVerifier.verifyAccessToken).not.toHaveBeenCalled();
+      expect(postgres.query).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(["INVALID_ACCESS_TOKEN", "INVALID_VERIFIED_IDENTITY"] as const)(
     "maps %s to the same sanitized 401",
@@ -277,23 +282,102 @@ describe("GET /v1/food-days/:foodDayId", () => {
     );
   });
 
-  it("removes Authorization transport copies before response handling", async () => {
-    const { app } = fixture();
-    let observed: unknown;
-    app.addHook("preSerialization", async (request, _reply, payload) => {
-      observed = {
-        authorization: request.headers.authorization,
-        rawHeaders: [...request.raw.rawHeaders],
-      };
-      return payload;
-    });
+  it.each([false, true])(
+    "reads one raw Authorization without mutating transport metadata (additional headers: %s)",
+    async (additionalHeaders) => {
+      const { app, authVerifier, postgres } = fixture();
+      let before: unknown;
+      let after: unknown;
+      app.addHook("onRequest", async (request) => {
+        if (additionalHeaders) {
+          // Exercise Fastify's merged getter without changing the raw credential.
+          request.headers = { authorization: "Bearer token-b" };
+        }
+        before = {
+          headers: { ...request.headers },
+          parsedRawHeaders: { ...request.raw.headers },
+          rawHeaders: [...request.raw.rawHeaders],
+        };
+      });
+      app.addHook("preSerialization", async (request, _reply, payload) => {
+        after = {
+          headers: { ...request.headers },
+          parsedRawHeaders: { ...request.raw.headers },
+          rawHeaders: [...request.raw.rawHeaders],
+        };
+        return payload;
+      });
+      const response = await app.inject({
+        url: `/v1/food-days/${dayA}?userId=${userB}`,
+        headers: {
+          aUtHoRiZaTiOn: "Bearer private-token",
+          "x-user-id": userB,
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(before).toBeDefined();
+      expect(after).toEqual(before);
+      expect(after).toMatchObject({
+        headers: {
+          authorization: additionalHeaders
+            ? "Bearer token-b"
+            : "Bearer private-token",
+        },
+        parsedRawHeaders: { authorization: "Bearer private-token" },
+        rawHeaders: expect.arrayContaining(["Bearer private-token"]),
+      });
+      expect(authVerifier.verifyAccessToken).toHaveBeenCalledExactlyOnceWith(
+        "private-token",
+      );
+      expect(postgres.query).toHaveBeenCalledTimes(1);
+      expect(postgres.query.mock.calls[0]?.[1]).toEqual([dayA, userA]);
+      expect(response.body).not.toContain("private-token");
+      expect(response.body).not.toContain("token-b");
+    },
+  );
+
+  it.each(["private-path-%", "private-path-%GG", "private-path-%E0%A4%A"])(
+    "sanitizes malformed URL encoding before authentication or SQL (%#)",
+    async (malformed) => {
+      const { app, authVerifier, postgres } = fixture();
+      const response = await app.inject({
+        url: `/v1/food-days/${malformed}`,
+        headers: { authorization: "Bearer private-token" },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.headers["content-type"]).toBe(
+        "application/json; charset=utf-8",
+      );
+      expect(response.json()).toEqual({
+        error: { code: "INVALID_REQUEST", message: "Invalid request." },
+      });
+      expect(response.body).not.toContain(malformed);
+      expect(response.body).not.toContain("private-path");
+      expect(response.body).not.toContain("private-token");
+      expect(authVerifier.verifyAccessToken).not.toHaveBeenCalled();
+      expect(postgres.query).not.toHaveBeenCalled();
+    },
+  );
+
+  it("sanitizes an oversized route parameter before authentication or SQL", async () => {
+    const { app, authVerifier, postgres } = fixture();
+    const oversized = "private-path-".repeat(100);
     const response = await app.inject({
-      url: `/v1/food-days/${dayA}`,
+      url: `/v1/food-days/${oversized}`,
       headers: { authorization: "Bearer private-token" },
     });
-    expect(response.statusCode).toBe(200);
-    expect(observed).toMatchObject({ authorization: undefined });
-    expect(JSON.stringify(observed)).not.toContain("private-token");
+    expect(response.statusCode).toBe(414);
+    expect(response.headers["content-type"]).toBe(
+      "application/json; charset=utf-8",
+    );
+    expect(response.json()).toEqual({
+      error: { code: "URI_TOO_LONG", message: "Request URI is too long." },
+    });
+    expect(response.body).not.toContain(oversized);
+    expect(response.body).not.toContain("private-path");
+    expect(response.body).not.toContain("private-token");
+    expect(authVerifier.verifyAccessToken).not.toHaveBeenCalled();
+    expect(postgres.query).not.toHaveBeenCalled();
   });
 
   it.each(["database", "verifier"])(
