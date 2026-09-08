@@ -36,6 +36,55 @@ corepack pnpm --filter @cal-calc/api test:integration
 ```
 
 This direct PostgreSQL suite does not prove RLS; existing Supabase Auth/RLS tests
-remain separate. HTTP routing, authentication, trusted request identity, and
-OpenAI integration are not implemented here. This is database wiring, not a
-deployed API.
+remain separate. HTTP routing and OpenAI integration are not implemented here.
+This is application wiring, not a deployed API.
+
+## Authenticated identity
+
+Construct `createSupabaseAccessTokenVerifier({ supabaseUrl, supabasePublishableKey })`
+explicitly, then call `authenticateAuthorizationHeader(verifier, authorization)`.
+The parser accepts one Bearer credential (case-insensitive scheme), rejects missing,
+blank, malformed, and ambiguous values, and never includes the token in errors.
+The verifier calls `auth.getClaims(token)` with an explicit nonblank token and
+default expiry verification. It does not trust `getSession()` or merely decode JWTs.
+
+Supabase verifies signatures using its cached project JWKS where supported;
+with symmetric signing keys or unavailable local verification it verifies through
+the Auth server. Thus verification is not guaranteed to be network-free. See
+[Supabase getClaims](https://supabase.com/docs/reference/javascript/auth-getclaims).
+Only a verified nonblank string `sub` becomes `{ userId }`; metadata, email, and
+request-supplied IDs cannot override it. One account remains one human user.
+
+Production configuration needs only the Supabase URL and publishable key, never a
+secret/service-role key. Blank configuration is rejected. No global client or
+environment reads are used in the auth module. Session persistence, auto-refresh,
+and URL session detection are disabled. Fixed `AuthenticationError` messages and
+reason codes replace SDK failures without retaining potentially sensitive causes.
+
+Ordinary authentication performs no application database lookup or profile
+provisioning. Verified API identity does **not** install Supabase RLS context on
+the privileged PostgreSQL pool. Future application calls must pass verified
+`identity.userId` into ownership-scoped persistence methods; existing RLS tests
+remain separate. There is no HTTP middleware, route, or request-body boundary yet.
+Revocation policy, custom authorization, and refresh-token flows are outside this slice.
+
+### Opt-in local Supabase Auth test
+
+`test:integration:auth` exercises this production verifier with two independently
+created/signed-in users, tampered-signature rejection, and subject-only ownership.
+The admin credential is used only to create/delete randomized test users; no
+profiles or ledger rows are created. The verifier and sign-in clients use the
+publishable key. This is identity verification coverage, not RLS coverage.
+
+Reuse the existing RLS suite's host environment variables: `SUPABASE_URL`,
+`SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY` (fixture-only). With keys
+already set locally in PowerShell, run:
+
+```powershell
+$env:SUPABASE_URL = "http://127.0.0.1:54321"
+corepack pnpm --filter @cal-calc/api test:integration:auth
+```
+
+Keep keys in the local environment; do not paste credentials into chat or source.
+The existing `test:integration` command still runs only the PostgreSQL runtime
+suite. Both host suites remain excluded from normal `corepack pnpm check`.

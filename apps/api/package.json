@@ -9,13 +9,15 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude \"src/integration/**/*.integration.test.ts\"",
-    "test:integration": "vitest run src/integration/postgres-runtime.integration.test.ts"
+    "test:integration": "vitest run src/integration/postgres-runtime.integration.test.ts",
+    "test:integration:auth": "vitest run src/integration/supabase-auth.integration.test.ts"
   },
   "dependencies": {
     "@cal-calc/config": "workspace:*",
     "@cal-calc/domain": "workspace:*",
     "@cal-calc/persistence": "workspace:*",
     "@cal-calc/shared": "workspace:*",
+    "@supabase/supabase-js": "2.112.4",
     "pg": "8.23.0"
   },
   "devDependencies": {
