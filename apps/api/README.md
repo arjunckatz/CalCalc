@@ -132,8 +132,8 @@ Router URL errors use fixed JSON responses without reflecting the original path,
 and are rejected before authentication or PostgreSQL access. A normally parsed
 route with a non-UUID ID still uses `INVALID_FOOD_DAY_ID` after authentication.
 No SDK/SQL messages, credentials, or stacks are returned. Unknown routes also use
-the sanitized 404 shape. HTTP mutations, operation keys, and request fingerprints
-are intentionally deferred until trusted mutation/idempotency ownership is designed.
+the sanitized 404 shape. HTTP mutations remain deferred; the application-owned
+identity primitive below is not yet wired to HTTP.
 
 ### Opt-in HTTP integration test
 
@@ -157,3 +157,37 @@ corepack pnpm --filter @cal-calc/api test:integration:http
 
 Keep credentials local. The existing PostgreSQL and Auth integration scripts are
 unchanged. This suite is not a deployment, load test, or RLS test.
+
+## Application-owned mutation identity
+
+`deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`
+returns `{ operationKey, requestFingerprint }` without IO. Application code must
+explicitly supply verified `identity.userId`, the literal `CREATE_FOOD_DAY` action,
+and a validated semantic command, never spread request/tool input into this call.
+This primitive does not authenticate users or validate FoodDay command meaning.
+The caller's opaque retry handle is parsed with `parseIdempotencyKey`: exactly
+1–128 ASCII characters from `A–Z a–z 0–9 . _ ~ -`, with no trimming.
+
+Internal identity is application-derived, not caller-supplied. SHA-256 hashes
+JSON-array-framed material with separate operation/fingerprint purpose labels,
+`v1`, action, and trusted user. The operation hash adds the retry key and yields
+`calcalc:v1:CREATE_FOOD_DAY:<64 hex characters>`; the 64-hex fingerprint instead
+adds the canonical semantic command. Neither output embeds raw user/key/payload
+values; hashing is not encryption or a guarantee against guessing low-entropy input.
+Same retry plus changed meaning retains the operation key but changes the
+fingerprint, allowing existing persistence to reject the conflict. A new retry
+key represents new explicit intent even for identical content.
+
+The internal canonicalizer sorts plain-object keys recursively and preserves
+array order and exact strings. Null, booleans, and finite JSON numbers are
+supported (JSON number rules, including `-0` becoming `0`). Decimal nutrition
+values must be canonical strings supplied by the command builder: `"119"`,
+`"119.0"`, and `"119.00"` deliberately remain distinct here. Undefined, nonfinite
+numbers, classes/Dates, functions, symbols, bigint, accessors, non-enumerable
+properties, sparse/extended arrays, and cycles are rejected. Do not include raw
+HTTP bytes, headers/tokens, retry keys, or generated IDs/timestamps in the semantic
+command. Changes to derivation/canonicalization semantics require a version bump.
+
+Future HTTP/agent mutations must use this boundary; there is no mutation route,
+retry-header parser, or workflow invocation yet. Existing exactly-once persistence
+workflows and schema remain unchanged; `requestFingerprint` matches their input.

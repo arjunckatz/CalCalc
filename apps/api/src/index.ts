@@ -24,6 +24,16 @@ export {
 export { PostgresPoolTransactionRunner } from "./postgres/transaction-runner.js";
 export { createApiApp, type ApiAppDependencies } from "./http/app.js";
 export type { FoodDayDto } from "./http/food-day-dto.js";
+export {
+  deriveMutationIdentity,
+  parseIdempotencyKey,
+  MutationIdentityError,
+  type IdempotencyKey,
+  type MutationAction,
+  type MutationIdentity,
+  type MutationIdentityInput,
+  type SemanticValue,
+} from "./mutations/mutation-identity.js";
 
 export function describeFoundation(): NonEmptyArray<string> {
   return [normalizeDecimal("1"), environmentVariableNames.supabaseUrl];
