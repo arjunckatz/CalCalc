@@ -2,6 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+allowBuilds:
+  "@parcel/watcher": false
+  unrs-resolver: false
+
 onlyBuiltDependencies:
   - esbuild
   - supabase
