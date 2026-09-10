@@ -25,6 +25,7 @@ const app = createApiApp({
     supabasePublishableKey: publishableKey,
   }),
   postgres: runtime.pool,
+  transactionRunner: runtime.transactionRunner,
 });
 const adminClient = fixtureClient(secretKey);
 const createdUserIds: string[] = [];

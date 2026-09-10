@@ -2,7 +2,10 @@ import type { ServerResponse } from "node:http";
 
 import {
   PostgresFoodDayRepository,
+  SemanticOperationIdempotencyConflictError,
+  SemanticOperationStateConflictError,
   type PostgresExecutor,
+  type PostgresTransactionRunner,
 } from "@cal-calc/persistence";
 import Fastify, { type FastifyInstance } from "fastify";
 
@@ -12,10 +15,18 @@ import {
 } from "../auth/authorization.js";
 import { authenticatedHandler } from "./authenticated-handler.js";
 import { toFoodDayDto } from "./food-day-dto.js";
+import {
+  createFoodDayMutation,
+  InvalidCreateFoodDayCommandError,
+  parseCreateFoodDayCommand,
+} from "../mutations/create-food-day.js";
+import { MutationIdentityError } from "../mutations/mutation-identity.js";
+import { readIdempotencyKey } from "./idempotency-key.js";
 
 export interface ApiAppDependencies {
   readonly authVerifier: AccessTokenVerifier;
   readonly postgres: PostgresExecutor;
+  readonly transactionRunner: PostgresTransactionRunner;
 }
 
 const uuidPattern =
@@ -39,6 +50,69 @@ export function createApiApp(
   const foodDays = new PostgresFoodDayRepository(dependencies.postgres);
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof InvalidCreateFoodDayCommandError) {
+      return reply.code(400).send({
+        error: {
+          code: "INVALID_CREATE_FOOD_DAY",
+          message: "Invalid FoodDay creation request.",
+        },
+      });
+    }
+    if (
+      error instanceof MutationIdentityError &&
+      error.reason === "INVALID_IDEMPOTENCY_KEY"
+    ) {
+      return reply.code(400).send({
+        error: {
+          code: "INVALID_IDEMPOTENCY_KEY",
+          message: "A valid Idempotency-Key is required.",
+        },
+      });
+    }
+    if (error instanceof SemanticOperationIdempotencyConflictError) {
+      return reply.code(409).send({
+        error: {
+          code: "IDEMPOTENCY_CONFLICT",
+          message: "Idempotency key was already used for a different request.",
+        },
+      });
+    }
+    if (
+      error instanceof SemanticOperationStateConflictError &&
+      (error.actualStatus === "PENDING" || error.actualStatus === "FAILED")
+    ) {
+      return reply.code(409).send({
+        error: {
+          code: "OPERATION_NOT_REPLAYABLE",
+          message: "This operation cannot currently be replayed.",
+        },
+      });
+    }
+    if (
+      error instanceof Fastify.errorCodes.FST_ERR_CTP_INVALID_JSON_BODY ||
+      error instanceof Fastify.errorCodes.FST_ERR_CTP_EMPTY_JSON_BODY ||
+      error instanceof Fastify.errorCodes.FST_ERR_CTP_INVALID_CONTENT_LENGTH
+    ) {
+      return reply.code(400).send({
+        error: { code: "INVALID_REQUEST", message: "Invalid request." },
+      });
+    }
+    if (error instanceof Fastify.errorCodes.FST_ERR_CTP_INVALID_MEDIA_TYPE) {
+      return reply.code(415).send({
+        error: {
+          code: "UNSUPPORTED_MEDIA_TYPE",
+          message: "Unsupported media type.",
+        },
+      });
+    }
+    if (error instanceof Fastify.errorCodes.FST_ERR_CTP_BODY_TOO_LARGE) {
+      return reply.code(413).send({
+        error: {
+          code: "PAYLOAD_TOO_LARGE",
+          message: "Request body is too large.",
+        },
+      });
+    }
     if (error instanceof AuthenticationError) {
       return reply.code(401).send({
         error: {
@@ -81,6 +155,24 @@ export function createApiApp(
           });
         }
         return toFoodDayDto(found);
+      },
+    ),
+  );
+  app.post(
+    "/v1/food-days",
+    { bodyLimit: 16 * 1024 },
+    authenticatedHandler(
+      dependencies.authVerifier,
+      async (identity, request, reply) => {
+        const idempotencyKey = readIdempotencyKey(request);
+        const command = parseCreateFoodDayCommand(request.body);
+        const result = await createFoodDayMutation(
+          { transactionRunner: dependencies.transactionRunner },
+          { trustedUserId: identity.userId, idempotencyKey, command },
+        );
+        return reply
+          .code(result.disposition === "CREATED" ? 201 : 200)
+          .send(result);
       },
     ),
   );

@@ -25,6 +25,14 @@ export { PostgresPoolTransactionRunner } from "./postgres/transaction-runner.js"
 export { createApiApp, type ApiAppDependencies } from "./http/app.js";
 export type { FoodDayDto } from "./http/food-day-dto.js";
 export {
+  createFoodDayMutation,
+  parseCreateFoodDayCommand,
+  InvalidCreateFoodDayCommandError,
+  type CreateFoodDayCommand,
+  type CreateFoodDayMutationInput,
+  type CreateFoodDayMutationResult,
+} from "./mutations/create-food-day.js";
+export {
   deriveMutationIdentity,
   parseIdempotencyKey,
   MutationIdentityError,

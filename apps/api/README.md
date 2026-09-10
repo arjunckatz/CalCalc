@@ -65,7 +65,7 @@ Ordinary authentication performs no application database lookup or profile
 provisioning. Verified API identity does **not** install Supabase RLS context on
 the privileged PostgreSQL pool. Application calls must pass verified
 `identity.userId` into ownership-scoped persistence methods; existing RLS tests
-remain separate. The read-only HTTP boundary below now uses this identity.
+remain separate. The HTTP boundary below uses this identity.
 Revocation policy, custom authorization, and refresh-token flows are outside this slice.
 
 ### Opt-in local Supabase Auth test
@@ -89,16 +89,17 @@ Keep keys in the local environment; do not paste credentials into chat or source
 The existing `test:integration` command still runs only the PostgreSQL runtime
 suite. All host suites remain excluded from normal `corepack pnpm check`.
 
-## Read-only HTTP boundary
+## Authenticated HTTP boundary
 
-`createApiApp({ authVerifier, postgres })` constructs an independent Fastify app;
-pass the production verifier and `runtime.pool` as the PostgreSQL executor.
+`createApiApp({ authVerifier, postgres, transactionRunner })` constructs an independent
+Fastify app; pass the production verifier, `runtime.pool` as the PostgreSQL executor,
+and `runtime.transactionRunner` for exactly-once writes.
 It reads no environment variables, creates no pool/client, and never starts a
 server on import or construction. There is no production TCP listen/bootstrap yet.
 The caller owns shutdown: `await app.close()`, then `await runtime.close()`.
 Fastify logging is disabled. No auth/framework plugins are installed.
 
-The only product endpoint is `GET /v1/food-days/:foodDayId`. A small reusable
+The read endpoint is `GET /v1/food-days/:foodDayId`. A small reusable
 authenticated-handler wrapper calls the existing M3B verification boundary and
 passes only `{ userId }` as identity to the handler. It reads raw header pairs
 without mutation and rejects duplicate Authorization occurrences, regardless of
@@ -132,8 +133,67 @@ Router URL errors use fixed JSON responses without reflecting the original path,
 and are rejected before authentication or PostgreSQL access. A normally parsed
 route with a non-UUID ID still uses `INVALID_FOOD_DAY_ID` after authentication.
 No SDK/SQL messages, credentials, or stacks are returned. Unknown routes also use
-the sanitized 404 shape. HTTP mutations remain deferred; the application-owned
-identity primitive below is not yet wired to HTTP.
+the sanitized 404 shape.
+
+### Exactly-once FoodDay creation
+
+`POST /v1/food-days` requires verified Bearer identity and exactly one
+`Idempotency-Key` header. Raw header occurrences are inspected read-only,
+case-insensitively; missing, duplicate, or invalid values return fixed 400
+`INVALID_IDEMPOTENCY_KEY` responses. The existing M3D key grammar applies without
+trimming. Keys and tokens are not logged or reflected in responses.
+
+The JSON object accepts only these fields:
+
+```json
+{
+  "calorieTarget": "2400.0",
+  "proteinTarget": "119.00",
+  "localDate": "2026-09-10",
+  "timezone": "UTC"
+}
+```
+
+Both targets are required strings: at most 128 characters before trimming,
+nonnegative plain decimal text (`digits` or `digits.digits`). JSON numbers,
+exponents, signs, and hexadecimal notation are rejected. Existing domain decimal
+normalization removes insignificant zeros without converting nutrition through
+JavaScript Number. Optional `localDate` and `timezone` independently default to
+null. Dates must be real Gregorian `YYYY-MM-DD` dates in years 0001–9999. Timezones
+must be nonblank, at most 128 characters from letters, digits, `_`, `+`, `-`, `/`,
+and accepted by `Intl.DateTimeFormat`; their spelling is preserved. Unknown fields
+are rejected with 400 `INVALID_CREATE_FOOD_DAY` before identity derivation or SQL.
+
+`createFoodDayMutation({ transactionRunner }, { trustedUserId, idempotencyKey, command })`
+revalidates the command and hardcodes `CREATE_FOOD_DAY`. Its normalized semantic
+payload contains the four command fields plus `status: OPEN` and `completeness:
+UNKNOWN`. It calls M3D derivation and the unchanged `createFoodDayExactlyOnce`
+workflow with the production transaction runner. FoodDay and operation UUIDs are
+server-generated; PostgreSQL supplies `openedAt` and creation/update timestamps.
+Generated IDs/timestamps, raw headers, URLs, and retry keys are not fingerprinted.
+The verified subject is the only owner: query/header spoofing cannot override it;
+body ownership, IDs, operation keys, fingerprints, status, and completeness are
+unknown fields and rejected.
+
+The authoritative result is `{ disposition, foodDay }`, using exactly the explicit
+FoodDay DTO described above, not an operation record or persistence object:
+
+- New operation: 201 with `CREATED`.
+- Same key and normalized command: 200 with `REPLAYED`, returning the original
+  canonical FoodDay. For example, `2400.0` and `2400.00` fingerprint identically.
+- Same key with changed meaning: fixed 409 `IDEMPOTENCY_CONFLICT`.
+- Known existing PENDING/FAILED operation: fixed 409 `OPERATION_NOT_REPLAYABLE`.
+- Corrupt stored result, missing replay target, or unexpected failure: fixed 500
+  `INTERNAL_ERROR`, never raw SQL/SDK errors.
+
+A new key represents new explicit intent, even with identical content/localDate.
+Multiple OPEN days on the same local date remain allowed. No active-day lookup,
+automatic closure, date deduplication, or midnight inference is added.
+
+POST has a 16 KiB body limit. Known Fastify invalid/empty JSON and content-length
+errors return fixed 400 `INVALID_REQUEST`; unsupported media types return fixed
+415 `UNSUPPORTED_MEDIA_TYPE`; oversized bodies return fixed 413 `PAYLOAD_TOO_LARGE`.
+These parser failures can precede authentication. Existing URL hardening remains.
 
 ### Opt-in HTTP integration test
 
@@ -145,6 +205,15 @@ randomized Auth users, fixture profiles and FoodDays, verifies own reads,
 bidirectional cross-account 404s, irrelevant spoofed user IDs, missing/tampered
 token 401s, and malformed UUID 400s. Cleanup removes FoodDays, profiles, then Auth
 users, and attempts both app and pool shutdown even if cleanup fails.
+
+The script also includes the POST suite: real creation/ownership, exact and
+decimal-normalized replay with row/operation counts, changed-command conflict,
+distinct same-date creation, independent users reusing a key, ownership spoofing,
+invalid/duplicate keys, and missing/tampered authentication. It uses the production
+transaction runner and workflow, not a local duplicate. Randomized fixtures are
+cleaned up in FoodDay/operation/profile/Auth order, with all cleanup attempts and
+app/runtime shutdown preserved via aggregate failure reporting. These host suites
+must be run separately; normal CI does not establish real database behavior.
 
 With `SUPABASE_PUBLISHABLE_KEY` and fixture-only `SUPABASE_SECRET_KEY` already set
 locally in PowerShell:
@@ -188,6 +257,6 @@ properties, sparse/extended arrays, and cycles are rejected. Do not include raw
 HTTP bytes, headers/tokens, retry keys, or generated IDs/timestamps in the semantic
 command. Changes to derivation/canonicalization semantics require a version bump.
 
-Future HTTP/agent mutations must use this boundary; there is no mutation route,
-retry-header parser, or workflow invocation yet. Existing exactly-once persistence
-workflows and schema remain unchanged; `requestFingerprint` matches their input.
+The POST application mutation above uses this boundary after decimal command
+normalization. Existing exactly-once persistence workflows and schema remain
+unchanged; `requestFingerprint` matches their input.

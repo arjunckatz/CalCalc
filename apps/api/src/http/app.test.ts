@@ -64,7 +64,15 @@ function fixture(
       ),
     })),
   };
-  const app = createApiApp({ authVerifier, postgres });
+  const app = createApiApp({
+    authVerifier,
+    postgres,
+    transactionRunner: {
+      async runInTransaction() {
+        throw new Error("Unexpected transaction in GET test.");
+      },
+    },
+  });
   apps.push(app);
   return { app, authVerifier, postgres };
 }
