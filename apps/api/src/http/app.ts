@@ -22,6 +22,10 @@ import {
 } from "../mutations/create-food-day.js";
 import { MutationIdentityError } from "../mutations/mutation-identity.js";
 import { readIdempotencyKey } from "./idempotency-key.js";
+import {
+  createFoodEntryHandler,
+  InvalidCreateFoodEntryRequestError,
+} from "./create-food-entry.js";
 
 export interface ApiAppDependencies {
   readonly authVerifier: AccessTokenVerifier;
@@ -50,6 +54,14 @@ export function createApiApp(
   const foodDays = new PostgresFoodDayRepository(dependencies.postgres);
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof InvalidCreateFoodEntryRequestError) {
+      return reply.code(400).send({
+        error: {
+          code: "INVALID_CREATE_FOOD_ENTRY",
+          message: "Invalid FoodEntry creation request.",
+        },
+      });
+    }
     if (error instanceof InvalidCreateFoodDayCommandError) {
       return reply.code(400).send({
         error: {
@@ -174,6 +186,14 @@ export function createApiApp(
           .code(result.disposition === "CREATED" ? 201 : 200)
           .send(result);
       },
+    ),
+  );
+  app.post(
+    "/v1/food-entries",
+    { bodyLimit: 16 * 1024 },
+    authenticatedHandler(
+      dependencies.authVerifier,
+      createFoodEntryHandler(dependencies.transactionRunner),
     ),
   );
   return app;
