@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export type MutationAction = "CREATE_FOOD_DAY";
+export type MutationAction = "CREATE_FOOD_DAY" | "CREATE_FOOD_ENTRY";
 
 export type SemanticValue =
   | null
@@ -67,7 +67,7 @@ export function deriveMutationIdentity(
   if (typeof trustedUserId !== "string" || trustedUserId.trim() === "") {
     throw new MutationIdentityError("INVALID_TRUSTED_USER_ID");
   }
-  if (action !== "CREATE_FOOD_DAY") {
+  if (action !== "CREATE_FOOD_DAY" && action !== "CREATE_FOOD_ENTRY") {
     throw new MutationIdentityError("INVALID_ACTION");
   }
   // Revalidate at runtime even if a caller bypasses the branded TypeScript type.
