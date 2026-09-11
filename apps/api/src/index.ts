@@ -24,6 +24,7 @@ export {
 export { PostgresPoolTransactionRunner } from "./postgres/transaction-runner.js";
 export { createApiApp, type ApiAppDependencies } from "./http/app.js";
 export type { FoodDayDto } from "./http/food-day-dto.js";
+export type { FoodEntryDto } from "./http/food-entry-dto.js";
 export {
   createFoodEntryMutation,
   type CreateFoodEntryCommand,
