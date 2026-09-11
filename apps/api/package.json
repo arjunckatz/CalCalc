@@ -11,7 +11,7 @@
     "test": "vitest run --exclude \"src/integration/**/*.integration.test.ts\"",
     "test:integration": "vitest run src/integration/postgres-runtime.integration.test.ts",
     "test:integration:auth": "vitest run src/integration/supabase-auth.integration.test.ts",
-    "test:integration:http": "vitest run src/integration/http-food-day.integration.test.ts src/integration/http-create-food-day.integration.test.ts"
+    "test:integration:http": "vitest run src/integration/http-food-day.integration.test.ts src/integration/http-create-food-day.integration.test.ts src/integration/http-create-food-entry.integration.test.ts"
   },
   "dependencies": {
     "@cal-calc/config": "workspace:*",
