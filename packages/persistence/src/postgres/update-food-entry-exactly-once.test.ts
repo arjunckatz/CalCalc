@@ -83,10 +83,15 @@ class ScriptedTransactionRunner implements PostgresTransactionRunner {
 
 describe("updateFoodEntryExactlyOnce", () => {
   it("claims, updates once, and completes on one executor with a post-update timestamp", async () => {
+    const original = originalEntry();
     const entry = correctedEntry();
+    const transform = vi.fn((current: FoodEntry) =>
+      changeQuantity(current, "250"),
+    );
     const completedAt = "2026-09-05T00:00:01.000Z";
     const runner = new ScriptedTransactionRunner([
       [operationRow()],
+      [foodEntryRow(original)],
       () => {
         vi.setSystemTime(completedAt);
         return [foodEntryRow(entry)];
@@ -97,7 +102,10 @@ describe("updateFoodEntryExactlyOnce", () => {
     vi.setSystemTime(timestamp);
 
     try {
-      const result = await updateFoodEntryExactlyOnce(runner, workflowInput());
+      const result = await updateFoodEntryExactlyOnce(
+        runner,
+        workflowInput({ transform }),
+      );
 
       expect(result.disposition).toBe("APPLIED");
       expect(result.entry.entry).toEqual(entry);
@@ -110,8 +118,9 @@ describe("updateFoodEntryExactlyOnce", () => {
         completedAt,
       });
       expect(runner).toMatchObject({ attempts: 1, commits: 1, rollbacks: 0 });
-      expect(runner.executor.calls).toHaveLength(3);
-      const [claim, update, completion] = runner.executor.calls;
+      expect(transform).toHaveBeenCalledExactlyOnceWith(original);
+      expect(runner.executor.calls).toHaveLength(4);
+      const [claim, load, update, completion] = runner.executor.calls;
       expect(normalizeSql(claim?.queryText)).toContain(
         "insert into public.semantic_operations",
       );
@@ -121,6 +130,10 @@ describe("updateFoodEntryExactlyOnce", () => {
         operationKey,
         fingerprint,
       ]);
+      expect(normalizeSql(load?.queryText)).toContain(
+        "from public.food_entries where id = $1 and user_id = $2",
+      );
+      expect(load?.values).toEqual([entryId, userId]);
       expect(normalizeSql(update?.queryText)).toContain(
         "update public.food_entries",
       );
@@ -146,19 +159,24 @@ describe("updateFoodEntryExactlyOnce", () => {
 
   it("replays a succeeded operation without updating or completing again", async () => {
     const entry = correctedEntry();
+    const transform = vi.fn((current: FoodEntry) => current);
     const runner = new ScriptedTransactionRunner([
       [],
       [succeededRow()],
       [foodEntryRow(entry)],
     ]);
 
-    const result = await updateFoodEntryExactlyOnce(runner, workflowInput());
+    const result = await updateFoodEntryExactlyOnce(
+      runner,
+      workflowInput({ transform }),
+    );
 
     expect(result.disposition).toBe("REPLAYED");
     expect(result.entry.entry).toEqual(entry);
     expect(result.appliedRevision).toBe(2);
     expect(result.operation.result).toEqual(successfulResult);
     expectReplayReads(runner.executor);
+    expect(transform).not.toHaveBeenCalled();
     expect(runner).toMatchObject({ attempts: 1, commits: 1, rollbacks: 0 });
   });
 
@@ -171,7 +189,11 @@ describe("updateFoodEntryExactlyOnce", () => {
       [foodEntryRow(current, laterOperationId)],
     ]);
 
-    const result = await updateFoodEntryExactlyOnce(runner, workflowInput());
+    const transform = vi.fn((entry: FoodEntry) => entry);
+    const result = await updateFoodEntryExactlyOnce(
+      runner,
+      workflowInput({ transform }),
+    );
 
     expect(result.disposition).toBe("REPLAYED");
     expect(result.entry.entry).toEqual(current);
@@ -180,6 +202,7 @@ describe("updateFoodEntryExactlyOnce", () => {
     expect(result.appliedRevision).toBe(2);
     expect(result.operation.result).toEqual(successfulResult);
     expectReplayReads(runner.executor);
+    expect(transform).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -304,24 +327,25 @@ describe("updateFoodEntryExactlyOnce", () => {
   });
 
   it("propagates stale-revision conflict out of the transaction callback", async () => {
+    const transform = vi.fn((entry: FoodEntry) => entry);
     const runner = new ScriptedTransactionRunner([
       [operationRow()],
-      [],
-      [{ revision: 3 }],
+      [foodEntryRow(changeQuantity(correctedEntry(), "300"))],
     ]);
 
-    const result = updateFoodEntryExactlyOnce(runner, workflowInput());
+    const result = updateFoodEntryExactlyOnce(
+      runner,
+      workflowInput({ transform }),
+    );
     await expect(result).rejects.toBeInstanceOf(FoodEntryRevisionConflictError);
     await expect(result).rejects.toMatchObject({
       entryId,
       expectedRevision: 1,
       actualRevision: 3,
     });
-    expect(runner.executor.calls).toHaveLength(3);
-    expect(runner.executor.calls[2]?.values).toEqual([entryId, userId]);
-    expect(normalizeSql(runner.executor.calls[2]?.queryText)).toBe(
-      "select revision from public.food_entries where id = $1 and user_id = $2",
-    );
+    expect(runner.executor.calls).toHaveLength(2);
+    expect(runner.executor.calls[1]?.values).toEqual([entryId, userId]);
+    expect(transform).not.toHaveBeenCalled();
     expect(runner).toMatchObject({ attempts: 1, commits: 0, rollbacks: 1 });
   });
 
@@ -331,7 +355,6 @@ describe("updateFoodEntryExactlyOnce", () => {
       const runner = new ScriptedTransactionRunner([
         [operationRow({ user_id: attemptUserId })],
         [],
-        [],
       ]);
 
       await expect(
@@ -340,15 +363,8 @@ describe("updateFoodEntryExactlyOnce", () => {
           workflowInput({ userId: attemptUserId }),
         ),
       ).rejects.toBeInstanceOf(FoodEntryNotFoundError);
-      expect(runner.executor.calls).toHaveLength(3);
+      expect(runner.executor.calls).toHaveLength(2);
       expect(runner.executor.calls[1]?.values[1]).toBe(attemptUserId);
-      expect(runner.executor.calls[2]?.values).toEqual([
-        entryId,
-        attemptUserId,
-      ]);
-      expect(normalizeSql(runner.executor.calls[2]?.queryText)).toBe(
-        "select revision from public.food_entries where id = $1 and user_id = $2",
-      );
       expect(runner).toMatchObject({ attempts: 1, commits: 0, rollbacks: 1 });
     },
   );
@@ -357,6 +373,7 @@ describe("updateFoodEntryExactlyOnce", () => {
     const failure = new Error("Completion failed.");
     const runner = new ScriptedTransactionRunner([
       [operationRow()],
+      [foodEntryRow(originalEntry())],
       [foodEntryRow(correctedEntry())],
       failure,
     ]);
@@ -364,7 +381,67 @@ describe("updateFoodEntryExactlyOnce", () => {
     await expect(
       updateFoodEntryExactlyOnce(runner, workflowInput()),
     ).rejects.toBe(failure);
-    expect(runner.executor.calls).toHaveLength(3);
+    expect(runner.executor.calls).toHaveLength(4);
+    expect(runner).toMatchObject({ attempts: 1, commits: 0, rollbacks: 1 });
+  });
+
+  it("rolls back a created claim when the transform throws without attempting update or completion", async () => {
+    const failure = new Error("Domain correction failed.");
+    const runner = new ScriptedTransactionRunner([
+      [operationRow()],
+      [foodEntryRow(originalEntry())],
+    ]);
+
+    await expect(
+      updateFoodEntryExactlyOnce(
+        runner,
+        workflowInput({
+          transform() {
+            throw failure;
+          },
+        }),
+      ),
+    ).rejects.toBe(failure);
+    expect(runner.executor.calls).toHaveLength(2);
+    expect(runner).toMatchObject({ attempts: 1, commits: 0, rollbacks: 1 });
+  });
+
+  it.each([
+    {
+      label: "different entry ID",
+      transform: (current: FoodEntry) => ({
+        ...changeQuantity(current, "250"),
+        id: "40000000-0000-4000-8000-000000000002",
+      }),
+    },
+    {
+      label: "unchanged revision",
+      transform: (current: FoodEntry) => ({
+        ...changeQuantity(current, "250"),
+        revision: current.revision,
+      }),
+    },
+    {
+      label: "skipped revision",
+      transform: (current: FoodEntry) => ({
+        ...changeQuantity(current, "250"),
+        revision: current.revision + 2,
+      }),
+    },
+  ])("rejects an invalid transform result: $label", async ({ transform }) => {
+    const runner = new ScriptedTransactionRunner([
+      [operationRow()],
+      [foodEntryRow(originalEntry())],
+    ]);
+
+    await expect(
+      updateFoodEntryExactlyOnce(runner, workflowInput({ transform })),
+    ).rejects.toMatchObject({
+      name: "UpdateFoodEntryIntegrityError",
+      operationKey,
+      reason: "INVALID_TRANSFORM_RESULT",
+    });
+    expect(runner.executor.calls).toHaveLength(2);
     expect(runner).toMatchObject({ attempts: 1, commits: 0, rollbacks: 1 });
   });
 });
@@ -377,14 +454,19 @@ function workflowInput(
     operationId,
     operationKey,
     requestFingerprint: fingerprint,
+    entryId,
     expectedRevision: 1,
-    entry: correctedEntry(),
+    transform: (current) => changeQuantity(current, "250"),
     ...overrides,
   };
 }
 
 function correctedEntry(): FoodEntry {
-  const original = createFoodEntry({
+  return changeQuantity(originalEntry(), "250");
+}
+
+function originalEntry(): FoodEntry {
+  return createFoodEntry({
     id: entryId,
     foodDayId,
     rawUserDescription: "200 g chicken and rice",
@@ -398,7 +480,6 @@ function correctedEntry(): FoodEntry {
     evidenceClass: "EXACT",
     status: "CONFIRMED_CONSUMED",
   });
-  return changeQuantity(original, "250");
 }
 
 function changeQuantity(entry: FoodEntry, amount: string): FoodEntry {

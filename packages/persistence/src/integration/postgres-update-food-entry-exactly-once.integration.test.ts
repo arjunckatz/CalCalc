@@ -87,7 +87,7 @@ describe("PostgreSQL exactly-once FoodEntry updates", () => {
     });
     expect(applied.disposition).toBe("APPLIED");
     expect(applied.appliedRevision).toBe(2);
-    expect(applied.entry.entry).toEqual(input.entry);
+    expect(applied.entry.entry).toEqual(input.transform(original));
     expect(applied.entry.entry.revision).toBe(2);
     expect(applied.entry.entry.quantity.amount).toBe("250");
     expect(applied.entry.entry.derivedNutrition).toEqual({
@@ -290,19 +290,22 @@ function correctionInput(
   current: FoodEntry,
   amount: string,
 ): UpdateFoodEntryExactlyOnceInput {
-  const mutation = updateFoodEntryQuantity(current, {
-    expectedRevision: current.revision,
-    quantity: { amount, unit: "GRAM" },
-    overrideAction: { type: "PRESERVE" },
-  });
-  if (!mutation.ok) throw new Error("Unexpected domain revision conflict.");
   return {
     userId: userA.id,
     operationId: randomUUID(),
     operationKey: `correct-quantity-${randomUUID()}`,
     requestFingerprint: `request-${randomUUID()}`,
+    entryId: current.id,
     expectedRevision: current.revision,
-    entry: mutation.value,
+    transform(canonical) {
+      const mutation = updateFoodEntryQuantity(canonical, {
+        expectedRevision: current.revision,
+        quantity: { amount, unit: "GRAM" },
+        overrideAction: { type: "PRESERVE" },
+      });
+      if (!mutation.ok) throw new Error("Unexpected domain revision conflict.");
+      return mutation.value;
+    },
   };
 }
 

@@ -1,11 +1,14 @@
+import type { FoodEntry } from "@cal-calc/domain";
+
 import type {
   JsonObject,
   PersistedFoodEntry,
   PersistedSemanticOperation,
 } from "../types.js";
 import {
+  FoodEntryNotFoundError,
+  FoodEntryRevisionConflictError,
   PostgresFoodEntryRepository,
-  type UpdateFoodEntryRecord,
 } from "./food-entry-repository.js";
 import {
   PostgresSemanticOperationRepository,
@@ -13,13 +16,15 @@ import {
 } from "./semantic-operation-repository.js";
 import type { PostgresTransactionRunner } from "./transaction.js";
 
-export interface UpdateFoodEntryExactlyOnceInput extends Pick<
-  UpdateFoodEntryRecord,
-  "userId" | "expectedRevision" | "entry"
-> {
+export interface UpdateFoodEntryExactlyOnceInput {
+  readonly userId: string;
+  readonly entryId: string;
+  readonly expectedRevision: number;
   readonly operationId: string;
   readonly operationKey: string;
   readonly requestFingerprint: string;
+  /** Must synchronously apply one deterministic domain mutation. */
+  readonly transform: (current: FoodEntry) => FoodEntry;
 }
 
 export type UpdateFoodEntryExactlyOnceResult =
@@ -39,7 +44,8 @@ export type UpdateFoodEntryExactlyOnceResult =
 export type UpdateFoodEntryIntegrityReason =
   | "MALFORMED_OPERATION_RESULT"
   | "REFERENCED_ENTRY_NOT_FOUND"
-  | "CURRENT_REVISION_BELOW_APPLIED";
+  | "CURRENT_REVISION_BELOW_APPLIED"
+  | "INVALID_TRANSFORM_RESULT";
 
 export class UpdateFoodEntryIntegrityError extends Error {
   override readonly name = "UpdateFoodEntryIntegrityError";
@@ -54,8 +60,14 @@ export class UpdateFoodEntryIntegrityError extends Error {
         "references no FoodEntry visible to this user",
       CURRENT_REVISION_BELOW_APPLIED:
         "records an applied revision beyond the current FoodEntry revision",
+      INVALID_TRANSFORM_RESULT:
+        "produced a FoodEntry with an invalid identity or revision transition",
     };
-    super(`Succeeded semantic operation ${operationKey} ${messages[reason]}.`);
+    super(
+      reason === "INVALID_TRANSFORM_RESULT"
+        ? `Semantic operation ${operationKey} ${messages[reason]}.`
+        : `Succeeded semantic operation ${operationKey} ${messages[reason]}.`,
+    );
   }
 }
 
@@ -83,10 +95,39 @@ export async function updateFoodEntryExactlyOnce(
       );
     }
 
+    const current = await foodEntryRepository.findById(
+      input.userId,
+      input.entryId,
+    );
+    if (current === null) {
+      throw new FoodEntryNotFoundError(input.entryId);
+    }
+    const currentRevision = current.entry.revision;
+    if (currentRevision !== input.expectedRevision) {
+      throw new FoodEntryRevisionConflictError(
+        input.entryId,
+        input.expectedRevision,
+        currentRevision,
+      );
+    }
+    const transformed = input.transform(current.entry);
+    if (
+      transformed === null ||
+      typeof transformed !== "object" ||
+      transformed.id !== input.entryId ||
+      !Number.isSafeInteger(transformed.revision) ||
+      transformed.revision !== currentRevision + 1
+    ) {
+      throw new UpdateFoodEntryIntegrityError(
+        input.operationKey,
+        "INVALID_TRANSFORM_RESULT",
+      );
+    }
+
     const entry = await foodEntryRepository.update({
       userId: input.userId,
       expectedRevision: input.expectedRevision,
-      entry: input.entry,
+      entry: transformed,
       lastOperationId: claim.operation.id,
     });
     const appliedRevision = entry.entry.revision;

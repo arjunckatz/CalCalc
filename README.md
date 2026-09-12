@@ -48,3 +48,4 @@ Copyright © 2026 Arjun Kathpalia. All rights reserved.
 CAL CALC is proprietary software. No permission is granted to use, copy,
 modify, distribute, or commercialize this code except with explicit written
 permission. See [LICENSE](./LICENSE).
+	
