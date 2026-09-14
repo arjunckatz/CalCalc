@@ -40,6 +40,12 @@ export {
   type CreateFoodDayMutationResult,
 } from "./mutations/create-food-day.js";
 export {
+  updateFoodEntryMutation,
+  type UpdateFoodEntryCommand,
+  type UpdateFoodEntryMutationInput,
+  type UpdateFoodEntryMutationResult,
+} from "./mutations/update-food-entry.js";
+export {
   deriveMutationIdentity,
   parseIdempotencyKey,
   MutationIdentityError,
