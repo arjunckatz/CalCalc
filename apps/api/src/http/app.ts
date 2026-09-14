@@ -1,6 +1,8 @@
 import type { ServerResponse } from "node:http";
 
 import {
+  FoodEntryNotFoundError,
+  FoodEntryRevisionConflictError,
   PostgresFoodDayRepository,
   SemanticOperationIdempotencyConflictError,
   SemanticOperationStateConflictError,
@@ -26,6 +28,10 @@ import {
   createFoodEntryHandler,
   InvalidCreateFoodEntryRequestError,
 } from "./create-food-entry.js";
+import {
+  InvalidUpdateFoodEntryRequestError,
+  updateFoodEntryHandler,
+} from "./update-food-entry.js";
 
 export interface ApiAppDependencies {
   readonly authVerifier: AccessTokenVerifier;
@@ -54,6 +60,14 @@ export function createApiApp(
   const foodDays = new PostgresFoodDayRepository(dependencies.postgres);
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof InvalidUpdateFoodEntryRequestError) {
+      return reply.code(400).send({
+        error: {
+          code: "INVALID_UPDATE_FOOD_ENTRY",
+          message: "Invalid FoodEntry quantity correction request.",
+        },
+      });
+    }
     if (error instanceof InvalidCreateFoodEntryRequestError) {
       return reply.code(400).send({
         error: {
@@ -87,6 +101,19 @@ export function createApiApp(
           code: "IDEMPOTENCY_CONFLICT",
           message: "Idempotency key was already used for a different request.",
         },
+      });
+    }
+    if (error instanceof FoodEntryRevisionConflictError) {
+      return reply.code(409).send({
+        error: {
+          code: "FOOD_ENTRY_REVISION_CONFLICT",
+          message: "Food entry revision conflict.",
+        },
+      });
+    }
+    if (error instanceof FoodEntryNotFoundError) {
+      return reply.code(404).send({
+        error: { code: "NOT_FOUND", message: "Resource not found." },
       });
     }
     if (
@@ -194,6 +221,14 @@ export function createApiApp(
     authenticatedHandler(
       dependencies.authVerifier,
       createFoodEntryHandler(dependencies.transactionRunner),
+    ),
+  );
+  app.patch<{ Params: { entryId: string } }>(
+    "/v1/food-entries/:entryId/quantity",
+    { bodyLimit: 16 * 1024 },
+    authenticatedHandler<{ Params: { entryId: string } }>(
+      dependencies.authVerifier,
+      updateFoodEntryHandler(dependencies.transactionRunner),
     ),
   );
   return app;
