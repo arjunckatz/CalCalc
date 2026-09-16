@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 
 export type MutationAction =
-  "CREATE_FOOD_DAY" | "CREATE_FOOD_ENTRY" | "UPDATE_FOOD_ENTRY";
+  | "CREATE_FOOD_DAY"
+  | "CREATE_FOOD_ENTRY"
+  | "UPDATE_FOOD_ENTRY"
+  | "REMOVE_FOOD_ENTRY";
 
 export type SemanticValue =
   | null
@@ -71,7 +74,8 @@ export function deriveMutationIdentity(
   if (
     action !== "CREATE_FOOD_DAY" &&
     action !== "CREATE_FOOD_ENTRY" &&
-    action !== "UPDATE_FOOD_ENTRY"
+    action !== "UPDATE_FOOD_ENTRY" &&
+    action !== "REMOVE_FOOD_ENTRY"
   ) {
     throw new MutationIdentityError("INVALID_ACTION");
   }

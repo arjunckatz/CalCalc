@@ -46,6 +46,12 @@ export {
   type UpdateFoodEntryMutationResult,
 } from "./mutations/update-food-entry.js";
 export {
+  removeFoodEntryMutation,
+  type RemoveFoodEntryCommand,
+  type RemoveFoodEntryMutationInput,
+  type RemoveFoodEntryMutationResult,
+} from "./mutations/remove-food-entry.js";
+export {
   deriveMutationIdentity,
   parseIdempotencyKey,
   MutationIdentityError,
