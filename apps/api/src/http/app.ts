@@ -32,6 +32,10 @@ import {
   InvalidUpdateFoodEntryRequestError,
   updateFoodEntryHandler,
 } from "./update-food-entry.js";
+import {
+  InvalidRemoveFoodEntryRequestError,
+  removeFoodEntryHandler,
+} from "./remove-food-entry.js";
 
 export interface ApiAppDependencies {
   readonly authVerifier: AccessTokenVerifier;
@@ -60,6 +64,14 @@ export function createApiApp(
   const foodDays = new PostgresFoodDayRepository(dependencies.postgres);
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof InvalidRemoveFoodEntryRequestError) {
+      return reply.code(400).send({
+        error: {
+          code: "INVALID_REMOVE_FOOD_ENTRY",
+          message: "Invalid FoodEntry removal request.",
+        },
+      });
+    }
     if (error instanceof InvalidUpdateFoodEntryRequestError) {
       return reply.code(400).send({
         error: {
@@ -229,6 +241,14 @@ export function createApiApp(
     authenticatedHandler<{ Params: { entryId: string } }>(
       dependencies.authVerifier,
       updateFoodEntryHandler(dependencies.transactionRunner),
+    ),
+  );
+  app.delete<{ Params: { entryId: string } }>(
+    "/v1/food-entries/:entryId",
+    { bodyLimit: 16 * 1024 },
+    authenticatedHandler<{ Params: { entryId: string } }>(
+      dependencies.authVerifier,
+      removeFoodEntryHandler(dependencies.transactionRunner),
     ),
   );
   return app;
