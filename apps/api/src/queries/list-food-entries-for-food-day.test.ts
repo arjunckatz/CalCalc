@@ -20,6 +20,7 @@ const persistedDay = {
   foodDay,
   userId: trustedUserId,
   completeness: "UNKNOWN" as const,
+  localDate: "2026-09-17",
   openedAt: "2026-09-17T00:00:00.000Z",
   createdAt: "2026-09-17T00:00:00.000Z",
   updatedAt: "2026-09-17T00:00:00.000Z",
@@ -76,7 +77,12 @@ describe("listFoodEntriesForFoodDay", () => {
     expect(
       dependencies.foodEntries.listActiveByFoodDay,
     ).toHaveBeenCalledExactlyOnceWith(trustedUserId, foodDayId);
-    expect(result).toEqual({ foodDay, entries: [first, second] });
+    expect(result).toEqual({
+      foodDay,
+      entries: [first, second],
+      completeness: "UNKNOWN",
+      localDate: "2026-09-17",
+    });
     expect(result.foodDay).toBe(foodDay);
     expect(result.entries[0]).toBe(first);
   });
@@ -90,7 +96,12 @@ describe("listFoodEntriesForFoodDay", () => {
         trustedUserId,
         foodDayId,
       }),
-    ).toEqual({ foodDay, entries: [] });
+    ).toEqual({
+      foodDay,
+      entries: [],
+      completeness: "UNKNOWN",
+      localDate: "2026-09-17",
+    });
   });
 
   it("preserves the repository's canonical order without mapping or filtering", async () => {

@@ -30,6 +30,12 @@ export {
   type ListFoodEntriesForFoodDayInput,
   type ListFoodEntriesForFoodDayResult,
 } from "./queries/list-food-entries-for-food-day.js";
+export {
+  buildFoodDayState,
+  type BuildFoodDayStateInput,
+  type FoodDayState,
+} from "./state/build-food-day-state.js";
+export { getFoodDayState } from "./state/get-food-day-state.js";
 export type { FoodDayDto } from "./http/food-day-dto.js";
 export type { FoodEntryDto } from "./http/food-entry-dto.js";
 export {

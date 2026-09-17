@@ -1,6 +1,7 @@
 import type { FoodDay, FoodEntry } from "@cal-calc/domain";
 import {
   FoodDayNotFoundError,
+  type FoodDayCompleteness,
   type PostgresFoodDayRepository,
   type PostgresFoodEntryRepository,
 } from "@cal-calc/persistence";
@@ -13,6 +14,8 @@ export interface ListFoodEntriesForFoodDayInput {
 export interface ListFoodEntriesForFoodDayResult {
   readonly foodDay: FoodDay;
   readonly entries: FoodEntry[];
+  readonly completeness: FoodDayCompleteness;
+  readonly localDate: string | null;
 }
 
 export interface ListFoodEntriesForFoodDayDependencies {
@@ -52,5 +55,10 @@ export async function listFoodEntriesForFoodDay(
     trustedUserId,
     foodDayId,
   );
-  return { foodDay: found.foodDay, entries };
+  return {
+    foodDay: found.foodDay,
+    entries,
+    completeness: found.completeness,
+    localDate: found.localDate ?? null,
+  };
 }
