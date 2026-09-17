@@ -23,6 +23,13 @@ export {
 } from "./postgres/runtime.js";
 export { PostgresPoolTransactionRunner } from "./postgres/transaction-runner.js";
 export { createApiApp, type ApiAppDependencies } from "./http/app.js";
+export {
+  listFoodEntriesForFoodDay,
+  InvalidFoodDayIdError,
+  type ListFoodEntriesForFoodDayDependencies,
+  type ListFoodEntriesForFoodDayInput,
+  type ListFoodEntriesForFoodDayResult,
+} from "./queries/list-food-entries-for-food-day.js";
 export type { FoodDayDto } from "./http/food-day-dto.js";
 export type { FoodEntryDto } from "./http/food-entry-dto.js";
 export {

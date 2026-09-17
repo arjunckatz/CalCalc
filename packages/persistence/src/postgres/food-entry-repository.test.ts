@@ -1,6 +1,7 @@
 import {
   changeFoodEntryStatus,
   createFoodEntry,
+  deleteFoodEntry,
   type FoodEntry,
   type MutationResult,
 } from "@cal-calc/domain";
@@ -140,6 +141,71 @@ describe("PostgresFoodEntryRepository", () => {
       );
     }
     expect(executor.calls[1]?.values).toEqual([entryId, otherUserId]);
+  });
+
+  it("lists only active rows for the trusted user and FoodDay in immutable creation order", async () => {
+    const first = testEntry();
+    const second: FoodEntry = {
+      ...first,
+      id: "30000000-0000-4000-8000-000000000002",
+    };
+    const executor = new ScriptedExecutor([[rowFor(first), rowFor(second)]]);
+    const repository = new PostgresFoodEntryRepository(executor);
+
+    expect(await repository.listActiveByFoodDay(userId, foodDayId)).toEqual([
+      first,
+      second,
+    ]);
+    expect(executor.calls).toHaveLength(1);
+    expect(executor.calls[0]?.values).toEqual([userId, foodDayId]);
+    const sql = normalizeSql(executor.calls[0]?.queryText);
+    expect(sql).toContain("from public.food_entries");
+    expect(sql).toContain("where user_id = $1 and food_day_id = $2");
+    expect(sql).toContain("and deleted_at is null");
+    expect(sql).toContain("order by created_at asc, id asc");
+  });
+
+  it("returns no entries when the scoped active query has no rows", async () => {
+    const executor = new ScriptedExecutor([[], [], []]);
+    const repository = new PostgresFoodEntryRepository(executor);
+
+    expect(await repository.listActiveByFoodDay(userId, foodDayId)).toEqual([]);
+    expect(
+      await repository.listActiveByFoodDay(otherUserId, foodDayId),
+    ).toEqual([]);
+    expect(
+      await repository.listActiveByFoodDay(
+        userId,
+        "20000000-0000-4000-8000-000000000002",
+      ),
+    ).toEqual([]);
+    expect(executor.calls.map((call) => call.values)).toEqual([
+      [userId, foodDayId],
+      [otherUserId, foodDayId],
+      [userId, "20000000-0000-4000-8000-000000000002"],
+    ]);
+  });
+
+  it("keeps findById able to hydrate a deleted row while active listing excludes it", async () => {
+    const deleted = successful(
+      deleteFoodEntry(testEntry(), {
+        expectedRevision: 1,
+        deletedAt: "2026-09-02T12:00:00.000Z",
+      }),
+    );
+    const executor = new ScriptedExecutor([[], [rowFor(deleted)]]);
+    const repository = new PostgresFoodEntryRepository(executor);
+
+    expect(await repository.listActiveByFoodDay(userId, foodDayId)).toEqual([]);
+    expect((await repository.findById(userId, entryId))?.entry).toEqual(
+      deleted,
+    );
+    expect(normalizeSql(executor.calls[0]?.queryText)).toContain(
+      "deleted_at is null",
+    );
+    expect(normalizeSql(executor.calls[1]?.queryText)).not.toContain(
+      "deleted_at is null",
+    );
   });
 
   it("updates through an ownership and expected-revision predicate and clears omitted linkage", async () => {

@@ -118,6 +118,24 @@ export class PostgresFoodEntryRepository {
     return row === undefined ? null : fromFoodEntryRow(row);
   }
 
+  async listActiveByFoodDay(
+    userId: string,
+    foodDayId: string,
+  ): Promise<FoodEntry[]> {
+    const result = await this.executor.query(
+      `select ${foodEntryResultColumns}
+       from public.food_entries
+       where user_id = $1
+         and food_day_id = $2
+         and deleted_at is null
+       order by created_at asc, id asc`,
+      [userId, foodDayId],
+    );
+    return result.rows.map(
+      (row) => fromFoodEntryRow(row as FoodEntryRow).entry,
+    );
+  }
+
   async update(input: UpdateFoodEntryRecord): Promise<PersistedFoodEntry> {
     const values = toFoodEntryWriteValues(input.entry);
     const result = await this.executor.query(

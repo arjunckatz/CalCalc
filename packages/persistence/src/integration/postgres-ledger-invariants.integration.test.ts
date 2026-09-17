@@ -102,6 +102,96 @@ describe.sequential("PostgreSQL canonical ledger invariants", () => {
     expect(revisions.rows[1]?.snapshot.display_name).toBe("Updated label food");
   });
 
+  it("preserves the database creation timestamp across valid updates and rejects rewriting it", async () => {
+    const dayId = await insertFoodDay(client, userA.id);
+    const entryId = await insertFoodEntry(client, {
+      userId: userA.id,
+      foodDayId: dayId,
+    });
+    const inserted = await client.query<{
+      readonly createdAt: Date;
+      readonly revision: number;
+      readonly displayName: string;
+      readonly deletedAt: Date | null;
+    }>(
+      `select created_at as "createdAt", revision,
+              display_name as "displayName", deleted_at as "deletedAt"
+       from public.food_entries
+       where id = $1`,
+      [entryId],
+    );
+    const createdAt = inserted.rows[0]?.createdAt;
+    expect(createdAt).toBeInstanceOf(Date);
+
+    const corrected = await client.query<{
+      readonly createdAt: Date;
+      readonly revision: number;
+      readonly displayName: string;
+    }>(
+      `update public.food_entries
+       set display_name = 'Corrected label food', revision = 2
+       where id = $1
+       returning created_at as "createdAt", revision,
+                 display_name as "displayName"`,
+      [entryId],
+    );
+    expect(corrected.rows[0]).toEqual({
+      createdAt,
+      revision: 2,
+      displayName: "Corrected label food",
+    });
+
+    await expectDatabaseFailure(
+      () =>
+        client.query(
+          `update public.food_entries
+           set created_at = created_at + interval '1 second', revision = 3
+           where id = $1`,
+          [entryId],
+        ),
+      {
+        code: "P0001",
+        message: "food entry creation timestamp is immutable",
+      },
+    );
+    const unchanged = await client.query<{
+      readonly createdAt: Date;
+      readonly revision: number;
+      readonly displayName: string;
+      readonly deletedAt: Date | null;
+    }>(
+      `select created_at as "createdAt", revision,
+              display_name as "displayName", deleted_at as "deletedAt"
+       from public.food_entries
+       where id = $1`,
+      [entryId],
+    );
+    expect(unchanged.rows[0]).toEqual({
+      createdAt,
+      revision: 2,
+      displayName: "Corrected label food",
+      deletedAt: null,
+    });
+
+    const removed = await client.query<{
+      readonly createdAt: Date;
+      readonly revision: number;
+      readonly deletedAt: Date | null;
+    }>(
+      `update public.food_entries
+       set deleted_at = '2026-09-16T12:00:00.000Z', revision = 3
+       where id = $1
+       returning created_at as "createdAt", revision,
+                 deleted_at as "deletedAt"`,
+      [entryId],
+    );
+    expect(removed.rows[0]?.createdAt).toEqual(createdAt);
+    expect(removed.rows[0]?.revision).toBe(3);
+    expect(removed.rows[0]?.deletedAt?.toISOString()).toBe(
+      "2026-09-16T12:00:00.000Z",
+    );
+  });
+
   it("rejects invalid initial revision and tombstone state", async () => {
     const dayId = await insertFoodDay(client, userA.id);
 

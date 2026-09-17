@@ -169,6 +169,116 @@ describe("PostgreSQL FoodEntry repository", () => {
       deleted.entry,
     );
   });
+
+  it("lists only current owned entries in immutable creation and ID order", async () => {
+    const [lowerId, higherId, olderId] = [
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+    ].sort() as [string, string, string];
+    const makeEntry = (id: string, foodDayId: string) =>
+      createFoodEntry({
+        id,
+        foodDayId,
+        rawUserDescription: "275 g label food",
+        displayName: "Label food",
+        quantity: { amount: "275", unit: "GRAM" },
+        nutritionBasis: {
+          amount: "100",
+          unit: "GRAM",
+          nutrition: { calories: "249.13", protein: "14.91" },
+        },
+        evidenceClass: "EXACT",
+        status: "CONFIRMED_CONSUMED",
+      });
+    const older = makeEntry(olderId, dayAId);
+    const higher = makeEntry(higherId, dayAId);
+    const lower = makeEntry(lowerId, dayAId);
+    const removedCandidate = makeEntry(randomUUID(), dayAId);
+    const otherUser = makeEntry(randomUUID(), dayBId);
+
+    // An explicit INSERT timestamp is legal; only later UPDATEs are immutable.
+    await client.query(
+      `insert into public.food_entries (
+         id, user_id, food_day_id, raw_user_description, display_name,
+         quantity_amount, quantity_unit, nutrition_basis_amount,
+         nutrition_basis_unit, nutrition_basis, derived_nutrition,
+         working_nutrition, evidence_class, status, revision, created_at
+       ) values (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+         $16::timestamptz
+       )`,
+      [
+        older.id,
+        userA.id,
+        dayAId,
+        older.rawUserDescription,
+        older.displayName,
+        older.quantity.amount,
+        older.quantity.unit,
+        older.nutritionBasis.amount,
+        older.nutritionBasis.unit,
+        older.nutritionBasis.nutrition,
+        older.derivedNutrition,
+        older.workingNutrition,
+        older.evidenceClass,
+        older.status,
+        older.revision,
+        "2020-01-01T00:00:00.000Z",
+      ],
+    );
+
+    await client.query("begin");
+    try {
+      // PostgreSQL now() is transaction-stable: these inserts tie on created_at.
+      await repository.create({ userId: userA.id, entry: higher });
+      await repository.create({ userId: userA.id, entry: lower });
+      await repository.create({ userId: userA.id, entry: removedCandidate });
+      await repository.create({ userId: userB.id, entry: otherUser });
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    }
+    const timestamps = await client.query<{ readonly created_at: Date }>(
+      `select created_at from public.food_entries where id = any($1::uuid[])`,
+      [[lowerId, higherId]],
+    );
+    expect(timestamps.rows).toHaveLength(2);
+    expect(timestamps.rows[0]?.created_at).toEqual(
+      timestamps.rows[1]?.created_at,
+    );
+
+    const removed = successful(
+      deleteFoodEntry(removedCandidate, {
+        expectedRevision: 1,
+        deletedAt: "2026-09-02T12:00:00.000Z",
+      }),
+    );
+    await repository.update({
+      userId: userA.id,
+      expectedRevision: 1,
+      entry: removed,
+    });
+
+    const entries = await repository.listActiveByFoodDay(userA.id, dayAId);
+    expect(entries).toEqual([older, lower, higher]);
+    expect(entries.map((entry) => entry.id)).not.toContain(removedCandidate.id);
+    expect(entries.map((entry) => entry.id)).not.toContain(otherUser.id);
+    expect(await repository.listActiveByFoodDay(userB.id, dayAId)).toEqual([]);
+    expect(await repository.listActiveByFoodDay(userA.id, dayBId)).toEqual([]);
+    const foundDeleted = await repository.findById(
+      userA.id,
+      removedCandidate.id,
+    );
+    expect(foundDeleted?.entry).toMatchObject({
+      id: removedCandidate.id,
+      revision: 2,
+    });
+    expect(new Date(foundDeleted?.entry.deletedAt ?? "").toISOString()).toBe(
+      removed.deletedAt,
+    );
+  });
 });
 
 function testUser(): TestUser {
