@@ -36,6 +36,16 @@ export {
   type FoodDayState,
 } from "./state/build-food-day-state.js";
 export { getFoodDayState } from "./state/get-food-day-state.js";
+export {
+  parseFoodDayToolCall,
+  ToolValidationError,
+  type FoodDayToolCall,
+} from "./agent/tools/food-day-tools.js";
+export {
+  executeFoodDayTool,
+  type FoodDayToolResult,
+  type TrustedFoodDayToolContext,
+} from "./agent/tools/execute-food-day-tool.js";
 export type { FoodDayDto } from "./http/food-day-dto.js";
 export type { FoodEntryDto } from "./http/food-entry-dto.js";
 export {
