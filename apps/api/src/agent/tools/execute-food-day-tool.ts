@@ -49,6 +49,7 @@ export async function executeFoodDayTool(
         result: await createFoodEntryMutation(dependencies, {
           trustedUserId,
           idempotencyKey,
+          operationScope: "FOOD_DAY_TURN_TOOL",
           command: { foodDayId: trustedContext.foodDayId, ...call.arguments },
         }),
       };
@@ -58,6 +59,8 @@ export async function executeFoodDayTool(
         result: await updateFoodEntryMutation(dependencies, {
           trustedUserId,
           idempotencyKey,
+          operationScope: "FOOD_DAY_TURN_TOOL",
+          trustedFoodDayId: trustedContext.foodDayId,
           command: call.arguments,
         }),
       };
@@ -67,6 +70,8 @@ export async function executeFoodDayTool(
         result: await removeFoodEntryMutation(dependencies, {
           trustedUserId,
           idempotencyKey,
+          operationScope: "FOOD_DAY_TURN_TOOL",
+          trustedFoodDayId: trustedContext.foodDayId,
           command: call.arguments,
         }),
       };

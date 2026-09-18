@@ -82,6 +82,7 @@ export {
   type MutationAction,
   type MutationIdentity,
   type MutationIdentityInput,
+  type MutationOperationScope,
   type SemanticValue,
 } from "./mutations/mutation-identity.js";
 

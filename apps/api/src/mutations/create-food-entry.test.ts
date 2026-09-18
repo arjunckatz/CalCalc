@@ -165,6 +165,58 @@ describe("createFoodEntryMutation", () => {
     expect(replay).toEqual({ disposition: "REPLAYED", entry: first.entry });
   });
 
+  it("uses the trusted agent operation scope while retaining FoodDay in its fingerprint", async () => {
+    await createFoodEntryMutation(
+      { transactionRunner: runner },
+      {
+        trustedUserId: userId,
+        idempotencyKey: retry,
+        operationScope: "FOOD_DAY_TURN_TOOL",
+        command,
+      },
+    );
+    await createFoodEntryMutation(
+      { transactionRunner: runner },
+      {
+        trustedUserId: userId,
+        idempotencyKey: retry,
+        operationScope: "FOOD_DAY_TURN_TOOL",
+        command: { ...command, foodDayId: "another-food-day" },
+      },
+    );
+    const first = workflow.mock.calls[0]![1];
+    const changedDay = workflow.mock.calls[1]![1];
+    expect(first.operationKey).toMatch(/^calcalc:v1:FOOD_DAY_TURN_TOOL:/);
+    expect(changedDay.operationKey).toBe(first.operationKey);
+    expect(changedDay.requestFingerprint).not.toBe(first.requestFingerprint);
+    expect(first.requestFingerprint).toBe(
+      deriveMutationIdentity({
+        trustedUserId: userId,
+        action: "CREATE_FOOD_ENTRY",
+        idempotencyKey: retry,
+        operationScope: "FOOD_DAY_TURN_TOOL",
+        semanticPayload: {
+          foodDayId: command.foodDayId,
+          rawUserDescription: "Had lunch",
+          displayName: "Lunch",
+          quantity: { amount: "1", unit: "SERVING" },
+          nutritionBasis: {
+            amount: "1",
+            unit: "SERVING",
+            nutrition: {
+              calories: "685.1075",
+              protein: "41.0025",
+              carbs: "249.13",
+              fat: "0.1",
+            },
+          },
+          evidenceClass: "SOURCED",
+          status: "CONFIRMED_CONSUMED",
+        },
+      }).requestFingerprint,
+    );
+  });
+
   it("passes changed semantics as the same operation key with a different fingerprint and propagates conflict", async () => {
     await run();
     const a = workflow.mock.calls[0]![1];
@@ -194,6 +246,8 @@ describe("createFoodEntryMutation", () => {
 
   it.each([
     "action",
+    "operationScope",
+    "trustedFoodDayId",
     "operationKey",
     "requestFingerprint",
     "operationId",

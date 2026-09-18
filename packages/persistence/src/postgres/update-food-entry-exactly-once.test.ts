@@ -98,13 +98,17 @@ describe("updateFoodEntryExactlyOnce", () => {
       },
       [succeededRow(successfulResult, completedAt)],
     ]);
+    const validateCurrent = vi.fn((current: FoodEntry) => {
+      expect(current).toEqual(original);
+      expect(runner.executor.calls).toHaveLength(2);
+    });
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(timestamp);
 
     try {
       const result = await updateFoodEntryExactlyOnce(
         runner,
-        workflowInput({ transform }),
+        workflowInput({ validateCurrent, transform }),
       );
 
       expect(result.disposition).toBe("APPLIED");
@@ -118,7 +122,11 @@ describe("updateFoodEntryExactlyOnce", () => {
         completedAt,
       });
       expect(runner).toMatchObject({ attempts: 1, commits: 1, rollbacks: 0 });
+      expect(validateCurrent).toHaveBeenCalledExactlyOnceWith(original);
       expect(transform).toHaveBeenCalledExactlyOnceWith(original);
+      expect(validateCurrent.mock.invocationCallOrder[0]).toBeLessThan(
+        transform.mock.invocationCallOrder[0]!,
+      );
       expect(runner.executor.calls).toHaveLength(4);
       const [claim, load, update, completion] = runner.executor.calls;
       expect(normalizeSql(claim?.queryText)).toContain(
@@ -189,10 +197,13 @@ describe("updateFoodEntryExactlyOnce", () => {
       [foodEntryRow(current, laterOperationId)],
     ]);
 
+    const validateCurrent = vi.fn(() => {
+      throw new Error("Replay must skip precondition.");
+    });
     const transform = vi.fn((entry: FoodEntry) => entry);
     const result = await updateFoodEntryExactlyOnce(
       runner,
-      workflowInput({ transform }),
+      workflowInput({ validateCurrent, transform, expectedRevision: 1 }),
     );
 
     expect(result.disposition).toBe("REPLAYED");
@@ -202,6 +213,7 @@ describe("updateFoodEntryExactlyOnce", () => {
     expect(result.appliedRevision).toBe(2);
     expect(result.operation.result).toEqual(successfulResult);
     expectReplayReads(runner.executor);
+    expect(validateCurrent).not.toHaveBeenCalled();
     expect(transform).not.toHaveBeenCalled();
   });
 
@@ -346,6 +358,67 @@ describe("updateFoodEntryExactlyOnce", () => {
     expect(runner.executor.calls).toHaveLength(2);
     expect(runner.executor.calls[1]?.values).toEqual([entryId, userId]);
     expect(transform).not.toHaveBeenCalled();
+    expect(runner).toMatchObject({ attempts: 1, commits: 0, rollbacks: 1 });
+  });
+
+  it("checks revision after a successful precondition", async () => {
+    const current = changeQuantity(correctedEntry(), "300");
+    const validateCurrent = vi.fn((entry: FoodEntry) => {
+      expect(entry).toEqual(current);
+    });
+    const transform = vi.fn((entry: FoodEntry) => entry);
+    const runner = new ScriptedTransactionRunner([
+      [operationRow()],
+      [foodEntryRow(current)],
+    ]);
+
+    await expect(
+      updateFoodEntryExactlyOnce(
+        runner,
+        workflowInput({ validateCurrent, transform }),
+      ),
+    ).rejects.toMatchObject({
+      name: "FoodEntryRevisionConflictError",
+      entryId,
+      expectedRevision: 1,
+      actualRevision: 3,
+    });
+    expect(validateCurrent).toHaveBeenCalledExactlyOnceWith(current);
+    expect(transform).not.toHaveBeenCalled();
+    expect(runner.executor.calls).toHaveLength(2);
+    expect(runner).toMatchObject({ attempts: 1, commits: 0, rollbacks: 1 });
+  });
+
+  it("propagates a precondition error before stale-revision validation and rolls back the claim", async () => {
+    class TestPreconditionError extends Error {}
+    const failure = new TestPreconditionError("Entry is outside this scope.");
+    const current = changeQuantity(correctedEntry(), "300");
+    const transform = vi.fn((entry: FoodEntry) => entry);
+    const runner = new ScriptedTransactionRunner([
+      [operationRow()],
+      [foodEntryRow(current)],
+    ]);
+    const validateCurrent = vi.fn((entry: FoodEntry) => {
+      expect(entry).toEqual(current);
+      expect(runner.executor.calls).toHaveLength(2);
+      throw failure;
+    });
+
+    await expect(
+      updateFoodEntryExactlyOnce(
+        runner,
+        workflowInput({ validateCurrent, transform, expectedRevision: 1 }),
+      ),
+    ).rejects.toBe(failure);
+    expect(validateCurrent).toHaveBeenCalledExactlyOnceWith(current);
+    expect(transform).not.toHaveBeenCalled();
+    expect(runner.executor.calls).toHaveLength(2);
+    expect(normalizeSql(runner.executor.calls[0]?.queryText)).toContain(
+      "insert into public.semantic_operations",
+    );
+    expect(normalizeSql(runner.executor.calls[1]?.queryText)).toContain(
+      "from public.food_entries where id = $1 and user_id = $2",
+    );
     expect(runner).toMatchObject({ attempts: 1, commits: 0, rollbacks: 1 });
   });
 

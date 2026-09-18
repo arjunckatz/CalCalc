@@ -6,6 +6,8 @@ export type MutationAction =
   | "UPDATE_FOOD_ENTRY"
   | "REMOVE_FOOD_ENTRY";
 
+export type MutationOperationScope = "FOOD_DAY_TURN_TOOL";
+
 export type SemanticValue =
   | null
   | boolean
@@ -24,6 +26,8 @@ export interface MutationIdentityInput {
   readonly trustedUserId: string;
   /** Chosen by application code, not by an external request or tool caller. */
   readonly action: MutationAction;
+  /** Trusted agent slot namespace; omission preserves action-scoped identity. */
+  readonly operationScope?: MutationOperationScope;
   readonly idempotencyKey: IdempotencyKey;
   /** Already validated command meaning; exclude transport/generated metadata. */
   readonly semanticPayload: SemanticValue;
@@ -38,6 +42,7 @@ const messages = {
   INVALID_IDEMPOTENCY_KEY: "Invalid idempotency key.",
   INVALID_TRUSTED_USER_ID: "Invalid trusted user identity.",
   INVALID_ACTION: "Unsupported mutation action.",
+  INVALID_OPERATION_SCOPE: "Unsupported mutation operation scope.",
   INVALID_SEMANTIC_PAYLOAD: "Invalid semantic command representation.",
 } as const;
 
@@ -79,6 +84,13 @@ export function deriveMutationIdentity(
   ) {
     throw new MutationIdentityError("INVALID_ACTION");
   }
+  if (
+    input.operationScope !== undefined &&
+    input.operationScope !== "FOOD_DAY_TURN_TOOL"
+  ) {
+    throw new MutationIdentityError("INVALID_OPERATION_SCOPE");
+  }
+  const operationNamespace = input.operationScope ?? action;
   // Revalidate at runtime even if a caller bypasses the branded TypeScript type.
   const retryKey = parseIdempotencyKey(input.idempotencyKey);
   let semanticCommand: string;
@@ -92,7 +104,7 @@ export function deriveMutationIdentity(
     JSON.stringify([
       "calcalc:operation-key",
       version,
-      action,
+      operationNamespace,
       trustedUserId,
       retryKey,
     ]),
@@ -107,7 +119,7 @@ export function deriveMutationIdentity(
     ]),
   );
   return {
-    operationKey: `calcalc:${version}:${action}:${operationHash}`,
+    operationKey: `calcalc:${version}:${operationNamespace}:${operationHash}`,
     requestFingerprint,
   };
 }

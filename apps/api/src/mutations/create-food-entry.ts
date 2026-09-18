@@ -16,6 +16,7 @@ import {
 import {
   deriveMutationIdentity,
   type IdempotencyKey,
+  type MutationOperationScope,
 } from "./mutation-identity.js";
 
 export interface CreateFoodEntryCommand {
@@ -31,6 +32,8 @@ export interface CreateFoodEntryMutationInput {
   /** Verified application identity, never request-supplied ownership. */
   readonly trustedUserId: string;
   readonly idempotencyKey: IdempotencyKey;
+  /** Trusted application context only; never supplied by model or HTTP command. */
+  readonly operationScope?: MutationOperationScope;
   readonly command: CreateFoodEntryCommand;
 }
 
@@ -77,6 +80,9 @@ export async function createFoodEntryMutation(
     trustedUserId: input.trustedUserId,
     action: "CREATE_FOOD_ENTRY",
     idempotencyKey: input.idempotencyKey,
+    ...(input.operationScope === undefined
+      ? {}
+      : { operationScope: input.operationScope }),
     semanticPayload: {
       foodDayId: entry.foodDayId,
       rawUserDescription: entry.rawUserDescription,

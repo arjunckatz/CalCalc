@@ -25,6 +25,10 @@ interface TestUser {
   readonly email: string;
 }
 
+class PreconditionSentinelError extends Error {
+  override readonly name = "PreconditionSentinelError";
+}
+
 class ClientTransactionRunner implements PostgresTransactionRunner {
   constructor(private readonly executor: PostgresExecutor) {}
 
@@ -177,6 +181,35 @@ describe("PostgreSQL exactly-once FoodEntry updates", () => {
       expectedRevision: 1,
       actualRevision: 2,
     } satisfies Partial<FoodEntryRevisionConflictError>);
+
+    // These reads run after the transaction runner has completed ROLLBACK.
+    expect(await foodEntryRepository.findById(userA.id, original.id)).toEqual(
+      applied.entry,
+    );
+    expect(await revisionHistory(userA.id, original.id)).toEqual(history);
+    expect(
+      await operationRepository.findByKey(userA.id, staleInput.operationKey),
+    ).toBeNull();
+    expect(await operationCount(userA.id, staleInput.operationKey)).toBe("0");
+  });
+
+  it("runs validateCurrent before a stale revision check and rolls back its claim", async () => {
+    const { original, applied } = await applyCorrection();
+    const sentinel = new PreconditionSentinelError("Current entry rejected.");
+    const staleInput = {
+      ...correctionInput(original, "275"),
+      validateCurrent(current: FoodEntry) {
+        expect(current).toEqual(applied.entry.entry);
+        throw sentinel;
+      },
+    };
+    const history = await revisionHistory(userA.id, original.id);
+
+    expect(staleInput.expectedRevision).toBe(1);
+    expect(applied.entry.entry.revision).toBe(2);
+    await expect(
+      updateFoodEntryExactlyOnce(transactionRunner, staleInput),
+    ).rejects.toBe(sentinel);
 
     // These reads run after the transaction runner has completed ROLLBACK.
     expect(await foodEntryRepository.findById(userA.id, original.id)).toEqual(

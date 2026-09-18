@@ -10,6 +10,7 @@ import {
   type QuantityOverrideAction,
 } from "@cal-calc/domain";
 import {
+  FoodEntryNotFoundError,
   FoodEntryRevisionConflictError,
   updateFoodEntryExactlyOnce,
   type PostgresTransactionRunner,
@@ -18,6 +19,7 @@ import {
 import {
   deriveMutationIdentity,
   type IdempotencyKey,
+  type MutationOperationScope,
 } from "./mutation-identity.js";
 
 export interface UpdateFoodEntryCommand {
@@ -31,6 +33,10 @@ export interface UpdateFoodEntryMutationInput {
   /** Verified application identity, never caller-supplied ownership. */
   readonly trustedUserId: string;
   readonly idempotencyKey: IdempotencyKey;
+  /** Trusted application context only; never supplied by model or HTTP command. */
+  readonly operationScope?: MutationOperationScope;
+  /** Optional canonical-entry FoodDay constraint from trusted application context. */
+  readonly trustedFoodDayId?: string;
   readonly command: UpdateFoodEntryCommand;
 }
 
@@ -45,15 +51,22 @@ export async function updateFoodEntryMutation(
   input: UpdateFoodEntryMutationInput,
 ): Promise<UpdateFoodEntryMutationResult> {
   const command = normalizeCommand(input.command);
+  validateTrustedFoodDayScope(input.operationScope, input.trustedFoodDayId);
   const identity = deriveMutationIdentity({
     trustedUserId: input.trustedUserId,
     action: "UPDATE_FOOD_ENTRY",
     idempotencyKey: input.idempotencyKey,
+    ...(input.operationScope === undefined
+      ? {}
+      : { operationScope: input.operationScope }),
     semanticPayload: {
       entryId: command.entryId,
       expectedRevision: command.expectedRevision,
       quantity: { ...command.quantity },
       overrideAction: semanticOverrideAction(command.overrideAction),
+      ...(input.trustedFoodDayId === undefined
+        ? {}
+        : { trustedFoodDayId: input.trustedFoodDayId }),
     },
   });
   const result = await updateFoodEntryExactlyOnce(
@@ -64,6 +77,15 @@ export async function updateFoodEntryMutation(
       expectedRevision: command.expectedRevision,
       operationId: randomUUID(),
       ...identity,
+      ...(input.trustedFoodDayId === undefined
+        ? {}
+        : {
+            validateCurrent(current: FoodEntry) {
+              if (current.foodDayId !== input.trustedFoodDayId) {
+                throw new FoodEntryNotFoundError(command.entryId);
+              }
+            },
+          }),
       transform(current) {
         const correction = updateFoodEntryQuantity(current, {
           expectedRevision: command.expectedRevision,
@@ -86,6 +108,20 @@ export async function updateFoodEntryMutation(
     entry: result.entry.entry,
     appliedRevision: result.appliedRevision,
   };
+}
+
+function validateTrustedFoodDayScope(
+  operationScope: MutationOperationScope | undefined,
+  trustedFoodDayId: string | undefined,
+): void {
+  if (
+    (operationScope === "FOOD_DAY_TURN_TOOL" &&
+      trustedFoodDayId === undefined) ||
+    (trustedFoodDayId !== undefined &&
+      (typeof trustedFoodDayId !== "string" || trustedFoodDayId.trim() === ""))
+  ) {
+    throw new DomainValidationError("Invalid trusted FoodDay scope.");
+  }
 }
 
 function normalizeCommand(

@@ -72,6 +72,78 @@ describe("application-owned mutation identity", () => {
     expect(derived.requestFingerprint).toHaveLength(64);
   });
 
+  it("retains exact persisted v1 identity bytes when operation scope is omitted", () => {
+    expect(deriveMutationIdentity(input())).toEqual({
+      operationKey:
+        "calcalc:v1:CREATE_FOOD_DAY:50b749f0f1d7aa7a1a956ff02522b20bf4cd1a89b9441c5cf3f8500ecd50e78c",
+      requestFingerprint:
+        "74f67e32ea2a1910b35b55161384185dbcf803c7ffedb3bc201e808208d28196",
+    });
+  });
+
+  it("keeps default operation keys action-scoped", () => {
+    const create = deriveMutationIdentity(
+      input({ action: "CREATE_FOOD_ENTRY" }),
+    );
+    const update = deriveMutationIdentity(
+      input({ action: "UPDATE_FOOD_ENTRY" }),
+    );
+    expect(create.operationKey).not.toBe(update.operationKey);
+    expect(create.operationKey).toMatch(/^calcalc:v1:CREATE_FOOD_ENTRY:/);
+    expect(update.operationKey).toMatch(/^calcalc:v1:UPDATE_FOOD_ENTRY:/);
+  });
+
+  it("shares a trusted agent slot across actions but keeps the action in the fingerprint", () => {
+    const scoped = { operationScope: "FOOD_DAY_TURN_TOOL" } as const;
+    const identities = [
+      "CREATE_FOOD_ENTRY",
+      "UPDATE_FOOD_ENTRY",
+      "REMOVE_FOOD_ENTRY",
+    ].map((action) =>
+      deriveMutationIdentity(
+        input({ action: action as MutationIdentityInput["action"], ...scoped }),
+      ),
+    );
+    expect(
+      new Set(identities.map(({ operationKey }) => operationKey)).size,
+    ).toBe(1);
+    expect(
+      new Set(identities.map(({ requestFingerprint }) => requestFingerprint))
+        .size,
+    ).toBe(3);
+    expect(identities[0]?.operationKey).toMatch(
+      /^calcalc:v1:FOOD_DAY_TURN_TOOL:[a-f0-9]{64}$/,
+    );
+  });
+
+  it("derives the same scoped identity for equivalent meaning and a different fingerprint for changed meaning", () => {
+    const scoped = {
+      action: "UPDATE_FOOD_ENTRY",
+      operationScope: "FOOD_DAY_TURN_TOOL",
+    } as const;
+    const first = deriveMutationIdentity(
+      input({
+        ...scoped,
+        semanticPayload: { entryId: "entry", quantity: "2" },
+      }),
+    );
+    const replay = deriveMutationIdentity(
+      input({
+        ...scoped,
+        semanticPayload: { quantity: "2", entryId: "entry" },
+      }),
+    );
+    const changed = deriveMutationIdentity(
+      input({
+        ...scoped,
+        semanticPayload: { entryId: "entry", quantity: "3" },
+      }),
+    );
+    expect(replay).toEqual(first);
+    expect(changed.operationKey).toBe(first.operationKey);
+    expect(changed.requestFingerprint).not.toBe(first.requestFingerprint);
+  });
+
   it("retains the same operation key but changes the fingerprint for changed meaning", () => {
     const first = deriveMutationIdentity(input());
     const changed = deriveMutationIdentity(
@@ -104,6 +176,21 @@ describe("application-owned mutation identity", () => {
       ),
     ).toThrow("Unsupported mutation action.");
   });
+
+  it.each(["private-scope", "CREATE_FOOD_ENTRY", "", null, 1])(
+    "rejects untrusted operation scope values at runtime (%#)",
+    (value) => {
+      expect(() =>
+        deriveMutationIdentity(
+          input({
+            operationScope: value as NonNullable<
+              MutationIdentityInput["operationScope"]
+            >,
+          }),
+        ),
+      ).toThrow("Unsupported mutation operation scope.");
+    },
+  );
 
   it("cannot take operation identity or ownership overrides from extra transport fields", () => {
     const extra = {
@@ -343,6 +430,141 @@ describe("opaque idempotency keys", () => {
 });
 
 describe("existing persistence compatibility without a database", () => {
+  it("rejects a changed action in one trusted slot at claim, before interpreting the stored result", async () => {
+    const scoped = { operationScope: "FOOD_DAY_TURN_TOOL" } as const;
+    const created = deriveMutationIdentity(
+      input({ ...scoped, action: "CREATE_FOOD_ENTRY" }),
+    );
+    const updated = deriveMutationIdentity(
+      input({ ...scoped, action: "UPDATE_FOOD_ENTRY" }),
+    );
+    expect(updated.operationKey).toBe(created.operationKey);
+    expect(updated.requestFingerprint).not.toBe(created.requestFingerprint);
+
+    const operationId = "30000000-0000-4000-8000-000000000001";
+    const row = {
+      id: operationId,
+      user_id: userA,
+      operation_key: created.operationKey,
+      request_fingerprint: created.requestFingerprint,
+      status: "SUCCEEDED",
+      result: { kind: "FOOD_ENTRY_CREATED", entryId: "created-entry" },
+      error: null,
+      created_at: "2026-09-09T00:00:00Z",
+      updated_at: "2026-09-09T00:00:00Z",
+      completed_at: "2026-09-09T00:00:00Z",
+    };
+    const query = vi
+      .fn<PostgresExecutor["query"]>()
+      .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [row] });
+    const repository = new PostgresSemanticOperationRepository({ query });
+    expect(
+      (
+        await repository.claim({
+          id: operationId,
+          userId: userA,
+          ...created,
+        })
+      ).disposition,
+    ).toBe("CREATED");
+    await expect(
+      repository.claim({ id: operationId, userId: userA, ...updated }),
+    ).rejects.toBeInstanceOf(SemanticOperationIdempotencyConflictError);
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["CREATE_FOOD_ENTRY", "REMOVE_FOOD_ENTRY"],
+    ["UPDATE_FOOD_ENTRY", "CREATE_FOOD_ENTRY"],
+    ["UPDATE_FOOD_ENTRY", "REMOVE_FOOD_ENTRY"],
+    ["REMOVE_FOOD_ENTRY", "CREATE_FOOD_ENTRY"],
+    ["REMOVE_FOOD_ENTRY", "UPDATE_FOOD_ENTRY"],
+  ] as const)(
+    "rejects a %s to %s action switch in the same agent slot",
+    async (firstAction, retriedAction) => {
+      const first = deriveMutationIdentity(
+        input({ action: firstAction, operationScope: "FOOD_DAY_TURN_TOOL" }),
+      );
+      const retry = deriveMutationIdentity(
+        input({ action: retriedAction, operationScope: "FOOD_DAY_TURN_TOOL" }),
+      );
+      expect(retry.operationKey).toBe(first.operationKey);
+      expect(retry.requestFingerprint).not.toBe(first.requestFingerprint);
+
+      const query = vi
+        .fn<PostgresExecutor["query"]>()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: "30000000-0000-4000-8000-000000000001",
+              user_id: userA,
+              operation_key: first.operationKey,
+              request_fingerprint: first.requestFingerprint,
+              status: "SUCCEEDED",
+              result: { kind: "INCOMPATIBLE_WITH_RETRY" },
+              error: null,
+              created_at: "2026-09-09T00:00:00Z",
+              updated_at: "2026-09-09T00:00:00Z",
+              completed_at: "2026-09-09T00:00:00Z",
+            },
+          ],
+        });
+      const repository = new PostgresSemanticOperationRepository({ query });
+      await expect(
+        repository.claim({
+          id: "40000000-0000-4000-8000-000000000001",
+          userId: userA,
+          ...retry,
+        }),
+      ).rejects.toBeInstanceOf(SemanticOperationIdempotencyConflictError);
+    },
+  );
+
+  it("recognizes a scoped same-action retry before rejecting changed command meaning", async () => {
+    const first = deriveMutationIdentity(
+      input({
+        action: "CREATE_FOOD_ENTRY",
+        operationScope: "FOOD_DAY_TURN_TOOL",
+      }),
+    );
+    const changed = deriveMutationIdentity(
+      input({
+        action: "CREATE_FOOD_ENTRY",
+        operationScope: "FOOD_DAY_TURN_TOOL",
+        semanticPayload: { calorieTarget: "changed" },
+      }),
+    );
+    const row = {
+      id: "30000000-0000-4000-8000-000000000001",
+      user_id: userA,
+      operation_key: first.operationKey,
+      request_fingerprint: first.requestFingerprint,
+      status: "SUCCEEDED",
+      result: { kind: "FOOD_ENTRY_CREATED", entryId: "created-entry" },
+      error: null,
+      created_at: "2026-09-09T00:00:00Z",
+      updated_at: "2026-09-09T00:00:00Z",
+      completed_at: "2026-09-09T00:00:00Z",
+    };
+    const query = vi
+      .fn<PostgresExecutor["query"]>()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [row] });
+    const repository = new PostgresSemanticOperationRepository({ query });
+    expect(
+      (await repository.claim({ id: row.id, userId: userA, ...first }))
+        .disposition,
+    ).toBe("EXISTING");
+    await expect(
+      repository.claim({ id: row.id, userId: userA, ...changed }),
+    ).rejects.toBeInstanceOf(SemanticOperationIdempotencyConflictError);
+  });
+
   it("passes derived text to claim, recognizes a retry, and rejects changed meaning", async () => {
     const derived = deriveMutationIdentity(input());
     const operationId = "30000000-0000-4000-8000-000000000001";

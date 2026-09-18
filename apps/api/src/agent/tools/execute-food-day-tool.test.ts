@@ -80,7 +80,7 @@ beforeEach(() => {
 });
 
 describe("executeFoodDayTool", () => {
-  it("validates LOG_FOOD and injects only trusted user, day, and retry identity", async () => {
+  it("validates LOG_FOOD and injects trusted user, day, retry identity, and operation scope", async () => {
     const authoritative = { disposition: "CREATED" as const, entry };
     createMutation.mockResolvedValueOnce(authoritative);
 
@@ -93,6 +93,7 @@ describe("executeFoodDayTool", () => {
     expect(createMutation).toHaveBeenCalledExactlyOnceWith(dependencies, {
       trustedUserId: trustedContext.trustedUserId,
       idempotencyKey: trustedContext.idempotencyKey,
+      operationScope: "FOOD_DAY_TURN_TOOL",
       command: {
         foodDayId: trustedContext.foodDayId,
         rawUserDescription: "Lunch",
@@ -113,7 +114,7 @@ describe("executeFoodDayTool", () => {
     expect(removeMutation).not.toHaveBeenCalled();
   });
 
-  it("delegates quantity correction with expected revision and validated override", async () => {
+  it("delegates quantity correction with trusted day scope and validated override", async () => {
     const authoritative = {
       disposition: "APPLIED" as const,
       entry: { ...entry, revision: 2 },
@@ -130,6 +131,8 @@ describe("executeFoodDayTool", () => {
     expect(updateMutation).toHaveBeenCalledExactlyOnceWith(dependencies, {
       trustedUserId: trustedContext.trustedUserId,
       idempotencyKey: trustedContext.idempotencyKey,
+      operationScope: "FOOD_DAY_TURN_TOOL",
+      trustedFoodDayId: trustedContext.foodDayId,
       command: {
         entryId: entry.id,
         expectedRevision: 1,
@@ -146,7 +149,7 @@ describe("executeFoodDayTool", () => {
     expect(removeMutation).not.toHaveBeenCalled();
   });
 
-  it("delegates removal without generating deletedAt or operation details", async () => {
+  it("delegates removal with trusted day scope without generating deletedAt", async () => {
     const authoritative = {
       disposition: "REPLAYED" as const,
       entry: { ...entry, revision: 2, deletedAt: "2026-09-18T00:00:00Z" },
@@ -163,6 +166,8 @@ describe("executeFoodDayTool", () => {
     expect(removeMutation).toHaveBeenCalledExactlyOnceWith(dependencies, {
       trustedUserId: trustedContext.trustedUserId,
       idempotencyKey: trustedContext.idempotencyKey,
+      operationScope: "FOOD_DAY_TURN_TOOL",
+      trustedFoodDayId: trustedContext.foodDayId,
       command: { entryId: entry.id, expectedRevision: 1 },
     });
     expect(output).toEqual({ name: "REMOVE_FOOD", result: authoritative });
@@ -185,6 +190,40 @@ describe("executeFoodDayTool", () => {
       arguments: { ...updateCall.arguments, trustedUserId: "attacker" },
     },
     { ...removeCall, idempotencyKey: "attacker-retry" },
+    { ...logCall, operationScope: "FOOD_DAY_TURN_TOOL" },
+    {
+      ...logCall,
+      arguments: { ...logCall.arguments, operationScope: "FOOD_DAY_TURN_TOOL" },
+    },
+    {
+      ...updateCall,
+      arguments: {
+        ...updateCall.arguments,
+        operationScope: "FOOD_DAY_TURN_TOOL",
+      },
+    },
+    {
+      ...removeCall,
+      arguments: {
+        ...removeCall.arguments,
+        operationScope: "FOOD_DAY_TURN_TOOL",
+      },
+    },
+    { ...updateCall, trustedFoodDayId: trustedContext.foodDayId },
+    {
+      ...updateCall,
+      arguments: {
+        ...updateCall.arguments,
+        trustedFoodDayId: trustedContext.foodDayId,
+      },
+    },
+    {
+      ...removeCall,
+      arguments: {
+        ...removeCall.arguments,
+        trustedFoodDayId: trustedContext.foodDayId,
+      },
+    },
   ])(
     "rejects model-supplied trusted/internal fields before mutation",
     async (call) => {

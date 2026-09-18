@@ -23,6 +23,8 @@ export interface UpdateFoodEntryExactlyOnceInput {
   readonly operationId: string;
   readonly operationKey: string;
   readonly requestFingerprint: string;
+  /** Synchronously validate the canonical owned entry before revision validation. */
+  readonly validateCurrent?: (current: FoodEntry) => void;
   /** Must synchronously apply one deterministic domain mutation. */
   readonly transform: (current: FoodEntry) => FoodEntry;
 }
@@ -102,6 +104,7 @@ export async function updateFoodEntryExactlyOnce(
     if (current === null) {
       throw new FoodEntryNotFoundError(input.entryId);
     }
+    input.validateCurrent?.(current.entry);
     const currentRevision = current.entry.revision;
     if (currentRevision !== input.expectedRevision) {
       throw new FoodEntryRevisionConflictError(

@@ -4,6 +4,7 @@ import {
   type FoodEntry,
 } from "@cal-calc/domain";
 import {
+  FoodEntryNotFoundError,
   FoodEntryRevisionConflictError,
   SemanticOperationIdempotencyConflictError,
   updateFoodEntryExactlyOnce,
@@ -58,38 +59,52 @@ const timestamp = "2026-09-14T00:00:00Z";
 
 beforeEach(() => {
   workflow.mockReset();
-  workflow.mockImplementation(async (_runner, input) => {
-    const entry = input.transform(current);
-    return {
-      disposition: "APPLIED",
-      entry: {
-        entry,
-        userId: input.userId,
-        lastOperationId: input.operationId,
-        reportedAt: timestamp,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      operation: {
-        id: input.operationId,
-        userId: input.userId,
-        operationKey: input.operationKey,
-        requestFingerprint: input.requestFingerprint,
-        status: "SUCCEEDED",
-        result: {
-          kind: "FOOD_ENTRY_UPDATED",
-          entryId: input.entryId,
-          appliedRevision: entry.revision,
-        },
-        error: null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        completedAt: timestamp,
-      },
-      appliedRevision: entry.revision,
-    };
-  });
+  workflow.mockImplementation(async (_runner, input) => applyCreated(input));
 });
+
+function applyCreated(
+  input: Parameters<typeof updateFoodEntryExactlyOnce>[1],
+  canonical: FoodEntry = current,
+) {
+  // The mock starts after a CREATED claim and loads the canonical owned entry.
+  input.validateCurrent?.(canonical);
+  if (canonical.revision !== input.expectedRevision) {
+    throw new FoodEntryRevisionConflictError(
+      input.entryId,
+      input.expectedRevision,
+      canonical.revision,
+    );
+  }
+  const entry = input.transform(canonical);
+  return {
+    disposition: "APPLIED",
+    entry: {
+      entry,
+      userId: input.userId,
+      lastOperationId: input.operationId,
+      reportedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    operation: {
+      id: input.operationId,
+      userId: input.userId,
+      operationKey: input.operationKey,
+      requestFingerprint: input.requestFingerprint,
+      status: "SUCCEEDED",
+      result: {
+        kind: "FOOD_ENTRY_UPDATED",
+        entryId: input.entryId,
+        appliedRevision: entry.revision,
+      },
+      error: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      completedAt: timestamp,
+    },
+    appliedRevision: entry.revision,
+  } as const;
+}
 
 function run(value = command, key = retry) {
   return updateFoodEntryMutation(
@@ -106,6 +121,7 @@ describe("updateFoodEntryMutation", () => {
     expect(sent.userId).toBe(userId);
     expect(sent.entryId).toBe(entryId);
     expect(sent.expectedRevision).toBe(1);
+    expect(sent.validateCurrent).toBeUndefined();
     expect(sent).toMatchObject(
       deriveMutationIdentity({
         trustedUserId: userId,
@@ -173,6 +189,107 @@ describe("updateFoodEntryMutation", () => {
       workingNutritionOverride: { calories: "620", protein: "37.5" },
       workingNutrition: { calories: "620", protein: "37.5" },
     });
+  });
+
+  it("binds agent-scoped update identity to the trusted FoodDay and checks the canonical entry", async () => {
+    const scopedInput = {
+      trustedUserId: userId,
+      idempotencyKey: retry,
+      operationScope: "FOOD_DAY_TURN_TOOL" as const,
+      trustedFoodDayId: current.foodDayId,
+      command,
+    };
+    const applied = await updateFoodEntryMutation(
+      { transactionRunner: runner },
+      scopedInput,
+    );
+    const first = workflow.mock.calls[0]![1];
+    expect(applied.entry.revision).toBe(2);
+    expect(first.validateCurrent).toEqual(expect.any(Function));
+    expect(first.operationKey).toMatch(/^calcalc:v1:FOOD_DAY_TURN_TOOL:/);
+    expect(first).toMatchObject(
+      deriveMutationIdentity({
+        trustedUserId: userId,
+        action: "UPDATE_FOOD_ENTRY",
+        idempotencyKey: retry,
+        operationScope: "FOOD_DAY_TURN_TOOL",
+        semanticPayload: {
+          entryId,
+          expectedRevision: 1,
+          quantity: { amount: "250", unit: "GRAM" },
+          overrideAction: { type: "PRESERVE" },
+          trustedFoodDayId: current.foodDayId,
+        },
+      }),
+    );
+    await updateFoodEntryMutation({ transactionRunner: runner }, scopedInput);
+    const retrySent = workflow.mock.calls[1]![1];
+    expect(retrySent.operationKey).toBe(first.operationKey);
+    expect(retrySent.requestFingerprint).toBe(first.requestFingerprint);
+
+    const captureOnlyFailure = new Error("Stop after identity derivation.");
+    workflow.mockRejectedValueOnce(captureOnlyFailure);
+    await expect(
+      updateFoodEntryMutation(
+        { transactionRunner: runner },
+        { ...scopedInput, trustedFoodDayId: "another-food-day" },
+      ),
+    ).rejects.toBe(captureOnlyFailure);
+    const changedDay = workflow.mock.calls[2]![1];
+    expect(changedDay.operationKey).toBe(first.operationKey);
+    expect(changedDay.requestFingerprint).not.toBe(first.requestFingerprint);
+  });
+
+  it.each([
+    ["current", 1],
+    ["stale", 2],
+  ] as const)(
+    "rejects a cross-FoodDay entry with %s expected revision before revision validation",
+    async (_label, revision) => {
+      workflow.mockImplementationOnce(async (_runner, input) =>
+        applyCreated(input, { ...current, revision }),
+      );
+      const attempt = updateFoodEntryMutation(
+        { transactionRunner: runner },
+        {
+          trustedUserId: userId,
+          idempotencyKey: retry,
+          operationScope: "FOOD_DAY_TURN_TOOL",
+          trustedFoodDayId: "another-food-day",
+          command,
+        },
+      );
+      await expect(attempt).rejects.toBeInstanceOf(FoodEntryNotFoundError);
+      await expect(attempt).rejects.toMatchObject({ entryId });
+    },
+  );
+
+  it("preserves unscoped stale-revision conflicts without a precondition", async () => {
+    workflow.mockImplementationOnce(async (_runner, input) =>
+      applyCreated(input, { ...current, revision: 2 }),
+    );
+    await expect(run()).rejects.toMatchObject({
+      name: "FoodEntryRevisionConflictError",
+      entryId,
+      expectedRevision: 1,
+      actualRevision: 2,
+    });
+    expect(workflow.mock.calls[0]![1].validateCurrent).toBeUndefined();
+  });
+
+  it("rejects an agent-scoped update without a trusted FoodDay before workflow execution", async () => {
+    await expect(
+      updateFoodEntryMutation(
+        { transactionRunner: runner },
+        {
+          trustedUserId: userId,
+          idempotencyKey: retry,
+          operationScope: "FOOD_DAY_TURN_TOOL",
+          command,
+        },
+      ),
+    ).rejects.toThrow("Invalid trusted FoodDay scope.");
+    expect(workflow).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -265,6 +382,8 @@ describe("updateFoodEntryMutation", () => {
 
   it.each([
     "action",
+    "operationScope",
+    "trustedFoodDayId",
     "operationKey",
     "requestFingerprint",
     "operationId",

@@ -6,6 +6,7 @@ import {
   type FoodEntry,
 } from "@cal-calc/domain";
 import {
+  FoodEntryNotFoundError,
   FoodEntryRevisionConflictError,
   updateFoodEntryExactlyOnce,
   type PostgresTransactionRunner,
@@ -14,6 +15,7 @@ import {
 import {
   deriveMutationIdentity,
   type IdempotencyKey,
+  type MutationOperationScope,
 } from "./mutation-identity.js";
 
 export interface RemoveFoodEntryCommand {
@@ -24,6 +26,10 @@ export interface RemoveFoodEntryCommand {
 export interface RemoveFoodEntryMutationInput {
   readonly trustedUserId: string;
   readonly idempotencyKey: IdempotencyKey;
+  /** Trusted application context only; never supplied by model or HTTP command. */
+  readonly operationScope?: MutationOperationScope;
+  /** Optional canonical-entry FoodDay constraint from trusted application context. */
+  readonly trustedFoodDayId?: string;
   readonly command: RemoveFoodEntryCommand;
 }
 
@@ -38,13 +44,20 @@ export async function removeFoodEntryMutation(
   input: RemoveFoodEntryMutationInput,
 ): Promise<RemoveFoodEntryMutationResult> {
   const command = normalizeCommand(input.command);
+  validateTrustedFoodDayScope(input.operationScope, input.trustedFoodDayId);
   const identity = deriveMutationIdentity({
     trustedUserId: input.trustedUserId,
     action: "REMOVE_FOOD_ENTRY",
     idempotencyKey: input.idempotencyKey,
+    ...(input.operationScope === undefined
+      ? {}
+      : { operationScope: input.operationScope }),
     semanticPayload: {
       entryId: command.entryId,
       expectedRevision: command.expectedRevision,
+      ...(input.trustedFoodDayId === undefined
+        ? {}
+        : { trustedFoodDayId: input.trustedFoodDayId }),
     },
   });
   const result = await updateFoodEntryExactlyOnce(
@@ -55,6 +68,15 @@ export async function removeFoodEntryMutation(
       expectedRevision: command.expectedRevision,
       operationId: randomUUID(),
       ...identity,
+      ...(input.trustedFoodDayId === undefined
+        ? {}
+        : {
+            validateCurrent(current: FoodEntry) {
+              if (current.foodDayId !== input.trustedFoodDayId) {
+                throw new FoodEntryNotFoundError(command.entryId);
+              }
+            },
+          }),
       transform(current) {
         const removal = deleteFoodEntry(current, {
           expectedRevision: command.expectedRevision,
@@ -76,6 +98,20 @@ export async function removeFoodEntryMutation(
     entry: result.entry.entry,
     appliedRevision: result.appliedRevision,
   };
+}
+
+function validateTrustedFoodDayScope(
+  operationScope: MutationOperationScope | undefined,
+  trustedFoodDayId: string | undefined,
+): void {
+  if (
+    (operationScope === "FOOD_DAY_TURN_TOOL" &&
+      trustedFoodDayId === undefined) ||
+    (trustedFoodDayId !== undefined &&
+      (typeof trustedFoodDayId !== "string" || trustedFoodDayId.trim() === ""))
+  ) {
+    throw new DomainValidationError("Invalid trusted FoodDay scope.");
+  }
 }
 
 function normalizeCommand(
