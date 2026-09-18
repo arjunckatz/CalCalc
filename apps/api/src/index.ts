@@ -46,6 +46,21 @@ export {
   type FoodDayToolResult,
   type TrustedFoodDayToolContext,
 } from "./agent/tools/execute-food-day-tool.js";
+export {
+  runFoodDayTurn,
+  FoodDayTurnExecutionError,
+  FoodDayTurnValidationError,
+  MAX_FOOD_DAY_TOOL_CALLS_PER_TURN,
+  type RunFoodDayTurnDependencies,
+} from "./agent/turn/run-food-day-turn.js";
+export type {
+  FoodDayModelDecision,
+  FoodDayModelDecisionInput,
+  FoodDayModelFinalizationInput,
+  FoodDayTurnInput,
+  FoodDayTurnModel,
+  FoodDayTurnResult,
+} from "./agent/turn/food-day-turn-types.js";
 export type { FoodDayDto } from "./http/food-day-dto.js";
 export type { FoodEntryDto } from "./http/food-entry-dto.js";
 export {
