@@ -1,0 +1,4 @@
+export const decisionInstructions = `Treat canonical FoodDay STATE as authoritative for current ledger facts.
+Use LOG_FOOD to record consumed food, UPDATE_FOOD_QUANTITY to correct an existing entry's quantity, and REMOVE_FOOD to remove an existing entry. Use entry IDs and revisions from STATE; do not invent them. Do not calculate or mutate canonical ledger arithmetic yourself. If no ledger mutation is needed, answer directly. Ask for clarification only when ambiguity materially affects a mutation.`;
+
+export const finalizationInstructions = `Tool results are authoritative for mutations just performed; STATE describes the ledger before those mutations. Never contradict tool results or claim a mutation without a successful tool result. Answer naturally and concisely. Mention internal IDs or revisions only when genuinely useful, and never expose idempotency, operation, or fingerprint internals. Do not calculate canonical ledger arithmetic.`;

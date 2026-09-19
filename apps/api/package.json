@@ -20,6 +20,7 @@
     "@cal-calc/shared": "workspace:*",
     "@supabase/supabase-js": "2.112.4",
     "fastify": "5.12.3",
+    "openai": "7.18.0",
     "pg": "8.23.0"
   },
   "devDependencies": {

@@ -61,6 +61,11 @@ export type {
   FoodDayTurnModel,
   FoodDayTurnResult,
 } from "./agent/turn/food-day-turn-types.js";
+export {
+  createOpenAIFoodDayTurnModel,
+  OpenAIFoodDayModelProtocolError,
+  type OpenAIFoodDayTurnModelConfig,
+} from "./agent/providers/openai/openai-food-day-turn-model.js";
 export type { FoodDayDto } from "./http/food-day-dto.js";
 export type { FoodEntryDto } from "./http/food-entry-dto.js";
 export {
