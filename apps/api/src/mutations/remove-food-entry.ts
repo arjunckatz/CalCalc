@@ -17,6 +17,7 @@ import {
   type IdempotencyKey,
   type MutationOperationScope,
 } from "./mutation-identity.js";
+import { sameUuid } from "./same-uuid.js";
 
 export interface RemoveFoodEntryCommand {
   readonly entryId: string;
@@ -72,7 +73,7 @@ export async function removeFoodEntryMutation(
         ? {}
         : {
             validateCurrent(current: FoodEntry) {
-              if (current.foodDayId !== input.trustedFoodDayId) {
+              if (!sameUuid(current.foodDayId, input.trustedFoodDayId)) {
                 throw new FoodEntryNotFoundError(command.entryId);
               }
             },

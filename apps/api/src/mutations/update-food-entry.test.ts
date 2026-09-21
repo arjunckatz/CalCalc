@@ -240,6 +240,40 @@ describe("updateFoodEntryMutation", () => {
     expect(changedDay.requestFingerprint).not.toBe(first.requestFingerprint);
   });
 
+  it("accepts equivalent UUID casing in trusted FoodDay scope without rewriting fingerprint input", async () => {
+    const canonicalDayId = "abcdefab-1234-4000-8000-abcdefabcdef";
+    workflow.mockImplementationOnce(async (_runner, input) =>
+      applyCreated(input, { ...current, foodDayId: canonicalDayId }),
+    );
+    const trustedFoodDayId = canonicalDayId.toUpperCase();
+    const applied = await updateFoodEntryMutation(
+      { transactionRunner: runner },
+      {
+        trustedUserId: userId,
+        idempotencyKey: retry,
+        operationScope: "FOOD_DAY_TURN_TOOL",
+        trustedFoodDayId,
+        command,
+      },
+    );
+    expect(applied.entry.foodDayId).toBe(canonicalDayId);
+    expect(workflow.mock.calls[0]![1]).toMatchObject(
+      deriveMutationIdentity({
+        trustedUserId: userId,
+        action: "UPDATE_FOOD_ENTRY",
+        idempotencyKey: retry,
+        operationScope: "FOOD_DAY_TURN_TOOL",
+        semanticPayload: {
+          entryId,
+          expectedRevision: 1,
+          quantity: { amount: "250", unit: "GRAM" },
+          overrideAction: { type: "PRESERVE" },
+          trustedFoodDayId,
+        },
+      }),
+    );
+  });
+
   it.each([
     ["current", 1],
     ["stale", 2],

@@ -6,7 +6,7 @@ import {
   type FoodEntry,
 } from "@cal-calc/domain";
 import { Client } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   FoodEntryNotFoundError,
@@ -143,6 +143,41 @@ describe("PostgreSQL exactly-once FoodEntry updates", () => {
     expect(replayed.entry).toEqual(applied.entry);
     expect(replayed.operation).toEqual(applied.operation);
     expect(await revisionHistory(userA.id, original.id)).toEqual(history);
+    expect(await operationCount(userA.id, input.operationKey)).toBe("1");
+  });
+
+  it("updates an uppercase UUID through PostgreSQL's canonical lowercase identity and replays once", async () => {
+    const { original, applied } = await applyCorrection(
+      `abcdef00${randomUUID().slice(8)}`,
+    );
+    const input = {
+      ...correctionInput(applied.entry.entry, "275"),
+      entryId: original.id.toUpperCase(),
+    };
+    const transform = vi.fn(input.transform);
+    const updated = await updateFoodEntryExactlyOnce(transactionRunner, {
+      ...input,
+      transform,
+    });
+    const replayed = await updateFoodEntryExactlyOnce(transactionRunner, {
+      ...input,
+      operationId: randomUUID(),
+      transform,
+    });
+
+    expect(updated.disposition).toBe("APPLIED");
+    expect(updated.entry.entry.id).toBe(original.id);
+    expect(updated.entry.entry.quantity.amount).toBe("275");
+    expect(updated.appliedRevision).toBe(3);
+    expect(replayed.disposition).toBe("REPLAYED");
+    expect(replayed.entry).toEqual(updated.entry);
+    expect(replayed.operation).toEqual(updated.operation);
+    expect(transform).toHaveBeenCalledExactlyOnceWith(applied.entry.entry);
+    expect(await revisionHistory(userA.id, original.id)).toEqual([
+      { revision: 1, operation_id: null },
+      { revision: 2, operation_id: applied.operation.id },
+      { revision: 3, operation_id: input.operationId },
+    ]);
     expect(await operationCount(userA.id, input.operationKey)).toBe("1");
   });
 
@@ -298,9 +333,9 @@ describe("PostgreSQL exactly-once FoodEntry updates", () => {
   });
 });
 
-async function applyCorrection() {
+async function applyCorrection(entryId: string = randomUUID()) {
   const original = createFoodEntry({
-    id: randomUUID(),
+    id: entryId,
     foodDayId: dayAId,
     rawUserDescription: "200 g chicken and rice",
     displayName: "Chicken and rice",

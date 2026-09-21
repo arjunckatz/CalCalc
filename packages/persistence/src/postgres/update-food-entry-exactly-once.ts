@@ -104,6 +104,7 @@ export async function updateFoodEntryExactlyOnce(
     if (current === null) {
       throw new FoodEntryNotFoundError(input.entryId);
     }
+    const currentEntryId = current.entry.id;
     input.validateCurrent?.(current.entry);
     const currentRevision = current.entry.revision;
     if (currentRevision !== input.expectedRevision) {
@@ -117,7 +118,7 @@ export async function updateFoodEntryExactlyOnce(
     if (
       transformed === null ||
       typeof transformed !== "object" ||
-      transformed.id !== input.entryId ||
+      transformed.id !== currentEntryId ||
       !Number.isSafeInteger(transformed.revision) ||
       transformed.revision !== currentRevision + 1
     ) {

@@ -188,6 +188,31 @@ describe("updateFoodEntryExactlyOnce", () => {
     expect(runner).toMatchObject({ attempts: 1, commits: 1, rollbacks: 0 });
   });
 
+  it("accepts a canonical loaded entry ID when the requested UUID uses uppercase", async () => {
+    const canonicalId = "abcdef00-0000-4000-8000-000000000001";
+    const original = { ...originalEntry(), id: canonicalId };
+    const corrected = changeQuantity(original, "250");
+    const runner = new ScriptedTransactionRunner([
+      [operationRow()],
+      [foodEntryRow(original)],
+      [foodEntryRow(corrected)],
+      [succeededRow({ ...successfulResult, entryId: canonicalId })],
+    ]);
+
+    const result = await updateFoodEntryExactlyOnce(
+      runner,
+      workflowInput({ entryId: canonicalId.toUpperCase() }),
+    );
+
+    expect(result.disposition).toBe("APPLIED");
+    expect(result.entry.entry).toEqual(corrected);
+    expect(runner.executor.calls[1]?.values).toEqual([
+      canonicalId.toUpperCase(),
+      userId,
+    ]);
+    expect(runner.executor.calls[2]?.values[0]).toBe(canonicalId);
+  });
+
   it("replays the current revision 3 while preserving the operation's applied revision 2", async () => {
     const current = changeQuantity(correctedEntry(), "300");
     const laterOperationId = "20000000-0000-4000-8000-000000000002";
@@ -486,6 +511,14 @@ describe("updateFoodEntryExactlyOnce", () => {
         ...changeQuantity(current, "250"),
         id: "40000000-0000-4000-8000-000000000002",
       }),
+    },
+    {
+      label: "entry ID mutated in place",
+      transform: (current: FoodEntry) =>
+        Object.assign(current, {
+          id: "40000000-0000-4000-8000-000000000002",
+          revision: current.revision + 1,
+        }),
     },
     {
       label: "unchanged revision",
