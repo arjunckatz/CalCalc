@@ -15,7 +15,12 @@ interface FoodEntryFixture {
   readonly revision?: number;
   readonly deletedAt?: string | null;
   readonly nutritionBasis?: Record<string, string>;
+  readonly derivedNutrition?: Record<string, string>;
   readonly workingNutritionOverride?: Record<string, string> | null;
+  readonly workingNutrition?: Record<string, string>;
+  readonly evidenceClass?: "EXACT" | "ESTIMATED";
+  readonly estimateLow?: Record<string, string>;
+  readonly estimateHigh?: Record<string, string>;
 }
 
 interface RevisionRow extends QueryResultRow {
@@ -302,6 +307,228 @@ describe.sequential("PostgreSQL canonical ledger invariants", () => {
     );
   });
 
+  it("returns false for missing required calories while preserving partial overrides", async () => {
+    const result = await client.query<{
+      readonly emptyNutrition: boolean;
+      readonly missingCalories: boolean;
+      readonly zeroCalories: boolean;
+      readonly partialOverride: boolean;
+      readonly emptyOverride: boolean;
+    }>(
+      `select
+         public.is_nutrition_json('{}'::jsonb) as "emptyNutrition",
+         public.is_nutrition_json('{"protein":"10"}'::jsonb) as "missingCalories",
+         public.is_nutrition_json('{"calories":"0"}'::jsonb) as "zeroCalories",
+         public.is_nutrition_json('{"protein":"10"}'::jsonb, false) as "partialOverride",
+         public.is_nutrition_json('{}'::jsonb, false) as "emptyOverride"`,
+    );
+    expect(result.rows[0]).toEqual({
+      emptyNutrition: false,
+      missingCalories: false,
+      zeroCalories: true,
+      partialOverride: true,
+      emptyOverride: false,
+    });
+
+    const dayId = await insertFoodDay(client, userA.id);
+    const entryId = await insertFoodEntry(client, {
+      userId: userA.id,
+      foodDayId: dayId,
+      workingNutritionOverride: { protein: "41.0025" },
+    });
+    const entry = await client.query<{
+      readonly override: Record<string, string>;
+    }>(
+      `select working_nutrition_override as "override"
+       from public.food_entries where id = $1`,
+      [entryId],
+    );
+    expect(entry.rows[0]?.override).toEqual({ protein: "41.0025" });
+
+    const caloriesOnlyId = await insertFoodEntry(client, {
+      userId: userA.id,
+      foodDayId: dayId,
+      nutritionBasis: { calories: "249.13" },
+      derivedNutrition: { calories: "685.1075" },
+      workingNutrition: { calories: "685.1075" },
+    });
+    const caloriesOnly = await client.query<{
+      readonly nutrition: Record<string, string>;
+      readonly override: null;
+      readonly low: null;
+      readonly high: null;
+    }>(
+      `select working_nutrition as nutrition,
+              working_nutrition_override as "override",
+              estimate_low as low, estimate_high as high
+       from public.food_entries where id = $1`,
+      [caloriesOnlyId],
+    );
+    expect(caloriesOnly.rows[0]).toEqual({
+      nutrition: { calories: "685.1075" },
+      override: null,
+      low: null,
+      high: null,
+    });
+  });
+
+  it.each([
+    { column: "nutrition_basis", fixture: { nutritionBasis: {} } },
+    {
+      column: "derived_nutrition",
+      fixture: { derivedNutrition: { protein: "10" } },
+    },
+    { column: "working_nutrition", fixture: { workingNutrition: {} } },
+    {
+      column: "estimate_low",
+      fixture: {
+        evidenceClass: "ESTIMATED" as const,
+        estimateLow: { protein: "10" },
+        estimateHigh: { calories: "800" },
+      },
+    },
+    {
+      column: "estimate_high",
+      fixture: {
+        evidenceClass: "ESTIMATED" as const,
+        estimateLow: { calories: "600" },
+        estimateHigh: {},
+      },
+    },
+  ])("rejects missing calories in $column", async ({ column, fixture }) => {
+    const dayId = await insertFoodDay(client, userA.id);
+    await expectDatabaseFailure(
+      () =>
+        insertFoodEntry(client, {
+          userId: userA.id,
+          foodDayId: dayId,
+          ...fixture,
+        }),
+      { code: "23514", constraint: `food_entries_${column}_check` },
+    );
+  });
+
+  it.each(["NaN", "Infinity", "-Infinity"])(
+    "rejects %s in FoodDay targets and maintenance snapshots",
+    async (value) => {
+      const dayId = await insertFoodDay(client, userA.id);
+      for (const column of [
+        "calorie_target",
+        "protein_target",
+        "maintenance_snapshot",
+      ]) {
+        await expectDatabaseFailure(
+          () =>
+            client.query(
+              `update public.food_days set ${column} = $2::numeric where id = $1`,
+              [dayId, value],
+            ),
+          { code: "23514", constraint: `food_days_${column}_check` },
+        );
+      }
+    },
+  );
+
+  it.each(["NaN", "Infinity", "-Infinity"])(
+    "rejects %s in FoodEntry quantities and nutrition basis amounts",
+    async (value) => {
+      const dayId = await insertFoodDay(client, userA.id);
+      const entryId = await insertFoodEntry(client, {
+        userId: userA.id,
+        foodDayId: dayId,
+      });
+      for (const column of ["quantity_amount", "nutrition_basis_amount"]) {
+        await expectDatabaseFailure(
+          () =>
+            client.query(
+              `update public.food_entries
+               set ${column} = $2::numeric, revision = 2 where id = $1`,
+              [entryId, value],
+            ),
+          { code: "23514", constraint: `food_entries_${column}_check` },
+        );
+      }
+    },
+  );
+
+  it("retains zero targets, nullable maintenance, and positive quantity bounds", async () => {
+    const dayId = await insertFoodDay(client, userA.id);
+    const zeroDay = await client.query<{
+      readonly calories: string;
+      readonly protein: string;
+      readonly maintenance: string;
+    }>(
+      `update public.food_days
+       set calorie_target = 0, protein_target = 0, maintenance_snapshot = 0
+       where id = $1
+       returning calorie_target::text as calories, protein_target::text as protein,
+                 maintenance_snapshot::text as maintenance`,
+      [dayId],
+    );
+    expect(zeroDay.rows[0]).toEqual({
+      calories: "0",
+      protein: "0",
+      maintenance: "0",
+    });
+    const nullable = await client.query<{ readonly maintenance: null }>(
+      `update public.food_days set maintenance_snapshot = null where id = $1
+       returning maintenance_snapshot as maintenance`,
+      [dayId],
+    );
+    expect(nullable.rows[0]?.maintenance).toBeNull();
+    for (const column of [
+      "calorie_target",
+      "protein_target",
+      "maintenance_snapshot",
+    ]) {
+      await expectDatabaseFailure(
+        () =>
+          client.query(
+            `update public.food_days set ${column} = -1 where id = $1`,
+            [dayId],
+          ),
+        { code: "23514", constraint: `food_days_${column}_check` },
+      );
+    }
+
+    const entryId = await insertFoodEntry(client, {
+      userId: userA.id,
+      foodDayId: dayId,
+    });
+    for (const column of ["quantity_amount", "nutrition_basis_amount"]) {
+      for (const value of ["0", "-1"]) {
+        await expectDatabaseFailure(
+          () =>
+            client.query(
+              `update public.food_entries set ${column} = $2::numeric, revision = 2
+             where id = $1`,
+              [entryId, value],
+            ),
+          { code: "23514", constraint: `food_entries_${column}_check` },
+        );
+      }
+    }
+    const finite = await client.query<{
+      readonly quantity: string;
+      readonly basis: string;
+      readonly revision: number;
+    }>(
+      `update public.food_entries
+       set quantity_amount = 0.1, nutrition_basis_amount = 0.1,
+           derived_nutrition = nutrition_basis, working_nutrition = nutrition_basis,
+           revision = 2
+       where id = $1
+       returning quantity_amount::text as quantity,
+                 nutrition_basis_amount::text as basis, revision`,
+      [entryId],
+    );
+    expect(finite.rows[0]).toEqual({
+      quantity: "0.1",
+      basis: "0.1",
+      revision: 2,
+    });
+  });
+
   it("allows PENDING to SUCCEEDED once and then rejects updates", async () => {
     const operationId = randomUUID();
     await client.query(
@@ -405,12 +632,14 @@ async function insertFoodEntry(
        working_nutrition_override,
        working_nutrition,
        evidence_class,
+       estimate_low,
+       estimate_high,
        status,
        revision,
        deleted_at
      ) values (
        $1, $2, $3, '275 g label food', 'Label food', $4, 'GRAM', $5, 'GRAM',
-       $6, $7, $8, $7, 'EXACT', 'CONFIRMED_CONSUMED', $9, $10
+       $6, $7, $8, $9, $10, $11, $12, 'CONFIRMED_CONSUMED', $13, $14
      )`,
     [
       id,
@@ -419,8 +648,12 @@ async function insertFoodEntry(
       "275",
       "100",
       fixture.nutritionBasis ?? { calories: "249.13", protein: "14.91" },
-      { calories: "685.1075", protein: "41.0025" },
+      fixture.derivedNutrition ?? { calories: "685.1075", protein: "41.0025" },
       fixture.workingNutritionOverride ?? null,
+      fixture.workingNutrition ?? { calories: "685.1075", protein: "41.0025" },
+      fixture.evidenceClass ?? "EXACT",
+      fixture.estimateLow ?? null,
+      fixture.estimateHigh ?? null,
       fixture.revision ?? 1,
       fixture.deletedAt ?? null,
     ],
