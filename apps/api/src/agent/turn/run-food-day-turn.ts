@@ -67,7 +67,10 @@ export async function runFoodDayTurn(
   dependencies: RunFoodDayTurnDependencies,
   input: FoodDayTurnInput,
 ): Promise<FoodDayTurnResult> {
-  const userMessage = validText(input.userMessage, "INVALID_USER_MESSAGE");
+  const userMessage = input.userMessage;
+  if (typeof userMessage !== "string" || userMessage.trim() === "") {
+    throw new FoodDayTurnValidationError("INVALID_USER_MESSAGE");
+  }
   let turnIdempotencyKey: FoodDayTurnInput["turnIdempotencyKey"];
   try {
     turnIdempotencyKey = parseIdempotencyKey(input.turnIdempotencyKey);

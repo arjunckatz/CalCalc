@@ -46,6 +46,18 @@ existing operation only when its request fingerprint matches; mismatches are
 rejected. Completion permits only `PENDING` to `SUCCEEDED` or `FAILED`, and the
 real PostgreSQL repository tests remain opt-in through `test:integration`.
 
+Completed FoodDay turn results are a separate append-only persistence concept,
+not semantic mutation operations. A backend-derived user/FoodDay/turn key is
+unique per user, and its request fingerprint binds the exact message. Lookup
+replays only a matching completed response; changed request meaning conflicts.
+Insert uses `ON CONFLICT DO NOTHING` and then reads the existing winner, so a
+final insert race never overwrites the first durable public response. The table
+stores no STATE, tool results, child operation identity, provider metadata, or
+conversation history. RLS permits owners to select their rows but exposes no
+authenticated insert, update, or delete policy; server persistence remains
+application-owned. Real PostgreSQL coverage is opt-in through
+`test:integration`.
+
 Exactly-once FoodEntry creation claims the semantic operation, creates the
 FoodEntry, and records semantic success on one transaction-bound PostgreSQL
 executor. Successful same-fingerprint retries replay the canonical FoodEntry

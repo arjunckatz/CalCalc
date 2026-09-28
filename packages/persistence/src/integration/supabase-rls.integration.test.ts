@@ -34,6 +34,7 @@ const dayAId = randomUUID();
 const dayBId = randomUUID();
 const entryAId = randomUUID();
 const operationAId = randomUUID();
+const turnResultAId = randomUUID();
 
 let accountA: AuthenticatedAccount;
 let accountB: AuthenticatedAccount;
@@ -249,6 +250,73 @@ describe.sequential("Supabase Auth account isolation through RLS", () => {
     );
   });
 
+  it("isolates completed FoodDay turns and keeps writes application-owned", async () => {
+    const turnKey = `calcalc:food-day-turn:v1:${randomUUID()}`;
+    const inserted = await adminClient
+      .from("food_day_turn_results")
+      .insert({
+        id: turnResultAId,
+        user_id: accountA.id,
+        food_day_id: dayAId,
+        turn_key: turnKey,
+        request_fingerprint: randomUUID(),
+        response: "Private completed response.",
+      })
+      .select("id")
+      .single();
+    assertNoError(inserted.error, "admin completed turn insert");
+
+    const own = await accountA.client
+      .from("food_day_turn_results")
+      .select("id, response")
+      .eq("id", turnResultAId)
+      .single();
+    assertNoError(own.error, "Account A completed turn select");
+    expect(own.data).toEqual({
+      id: turnResultAId,
+      response: "Private completed response.",
+    });
+    await expectNoRows(
+      accountB.client
+        .from("food_day_turn_results")
+        .select("id")
+        .eq("id", turnResultAId),
+      "Account B completed turn select",
+    );
+
+    const clientInsert = await accountA.client
+      .from("food_day_turn_results")
+      .insert({
+        user_id: accountA.id,
+        food_day_id: dayAId,
+        turn_key: `${turnKey}-client`,
+        request_fingerprint: randomUUID(),
+        response: "Client-forged response.",
+      })
+      .select("id");
+    expectRlsRejection(
+      clientInsert.data,
+      clientInsert.error,
+      "authenticated completed turn insert",
+    );
+    await expectNoRows(
+      accountA.client
+        .from("food_day_turn_results")
+        .update({ response: "overwritten" })
+        .eq("id", turnResultAId)
+        .select("id"),
+      "authenticated completed turn update",
+    );
+    await expectNoRows(
+      accountA.client
+        .from("food_day_turn_results")
+        .delete()
+        .eq("id", turnResultAId)
+        .select("id"),
+      "authenticated completed turn delete",
+    );
+  });
+
   it("limits revision visibility and prevents authenticated updates", async () => {
     const ownRevisions = await accountA.client
       .from("food_entry_revisions")
@@ -387,6 +455,7 @@ describe.sequential("Supabase Auth account isolation through RLS", () => {
       "food_entries",
       "food_entry_revisions",
       "semantic_operations",
+      "food_day_turn_results",
     ]) {
       await expectNoRows(
         anonymousClient.from(table).select("user_id"),
@@ -529,6 +598,7 @@ async function cleanupWithAdmin(
   const failures: Error[] = [];
 
   for (const table of [
+    "food_day_turn_results",
     "food_entry_revisions",
     "food_entries",
     "semantic_operations",

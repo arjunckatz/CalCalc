@@ -23,6 +23,7 @@ export {
 } from "./postgres/runtime.js";
 export { PostgresPoolTransactionRunner } from "./postgres/transaction-runner.js";
 export { createApiApp, type ApiAppDependencies } from "./http/app.js";
+export { createApiHostFromEnvironment, type ApiHost } from "./host.js";
 export {
   listFoodEntriesForFoodDay,
   InvalidFoodDayIdError,
@@ -47,6 +48,21 @@ export {
   type TrustedFoodDayToolContext,
 } from "./agent/tools/execute-food-day-tool.js";
 export {
+  createFoodDayTurnRunner,
+  type CreateFoodDayTurnRunnerDependencies,
+  type FoodDayTurnRunner,
+} from "./agent/turn/create-food-day-turn-runner.js";
+export {
+  deriveFoodDayTurnIdentity,
+  FoodDayTurnIdentityError,
+  type FoodDayTurnIdentity,
+  type FoodDayTurnIdentityInput,
+} from "./agent/turn/food-day-turn-identity.js";
+export {
+  runDurableFoodDayTurn,
+  type RunDurableFoodDayTurnDependencies,
+} from "./agent/turn/run-durable-food-day-turn.js";
+export {
   runFoodDayTurn,
   FoodDayTurnExecutionError,
   FoodDayTurnValidationError,
@@ -59,6 +75,7 @@ export type {
   FoodDayModelFinalizationInput,
   FoodDayTurnInput,
   FoodDayTurnModel,
+  FoodDayTurnPublicResult,
   FoodDayTurnResult,
 } from "./agent/turn/food-day-turn-types.js";
 export {

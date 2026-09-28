@@ -50,6 +50,26 @@ export interface PersistedSemanticOperation {
   readonly completedAt: string | null;
 }
 
+export interface FoodDayTurnResultRow {
+  readonly id: string;
+  readonly user_id: string;
+  readonly food_day_id: string;
+  readonly turn_key: string;
+  readonly request_fingerprint: string;
+  readonly response: string;
+  readonly created_at: string;
+}
+
+export interface PersistedFoodDayTurnResult {
+  readonly id: string;
+  readonly userId: string;
+  readonly foodDayId: string;
+  readonly turnKey: string;
+  readonly requestFingerprint: string;
+  readonly response: string;
+  readonly createdAt: string;
+}
+
 export interface FoodDayRow {
   readonly id: string;
   readonly user_id: string;

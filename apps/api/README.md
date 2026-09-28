@@ -21,7 +21,7 @@ Rollback failure throws an `AggregateError` containing the original and rollback
 errors (with the rollback error as `cause`) and discards the client. Acquired clients
 are always released exactly once; no retry or transaction takeover is added.
 
-The future bootstrap owns shutdown and background pool-error policy. Attach a
+The host caller owns background pool-error policy. Attach a
 `runtime.pool.on("error", handler)` listener before database use; the runtime
 does not silently swallow idle-connection errors or install global handlers.
 
@@ -97,7 +97,13 @@ and `runtime.transactionRunner` for exactly-once writes.
 It reads no environment variables, creates no pool/client, and never starts a
 server on import or construction. There is no production TCP listen/bootstrap yet.
 The caller owns shutdown: `await app.close()`, then `await runtime.close()`.
-Fastify logging is disabled. No auth/framework plugins are installed.
+Fastify logging is disabled. No auth/framework plugins are installed. The
+explicit `createApiHostFromEnvironment()` composition factory creates the
+PostgreSQL runtime, Supabase verifier, OpenAI client/model adapter, turn runner,
+and app, but still performs no eager connection or TCP listen. It requires
+`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `OPENAI_API_KEY`, and
+`OPENAI_MODEL` only when called. The caller still owns listen timing, idle-pool
+error policy, and `host.close()`.
 
 The read endpoint is `GET /v1/food-days/:foodDayId`. A small reusable
 authenticated-handler wrapper calls the existing M3B verification boundary and
@@ -226,6 +232,53 @@ corepack pnpm --filter @cal-calc/api test:integration:http
 
 Keep credentials local. The existing PostgreSQL and Auth integration scripts are
 unchanged. This suite is not a deployment, load test, or RLS test.
+
+### Authenticated FoodDay conversational turn
+
+`POST /v1/food-days/:foodDayId/turns` requires verified Bearer identity, one
+valid `Idempotency-Key`, a UUID-shaped FoodDay ID, and the strict body
+`{ "message": string }`. Whitespace-only messages and unknown fields are
+rejected. The HTTP adapter passes the unchanged message and trusted identity,
+FoodDay, and parsed retry key to the injected provider-neutral turn runner. It
+does not load ownership separately, execute tools, perform nutrition arithmetic,
+or construct provider clients.
+
+Success always returns only `{ "response": string }`. The initial STATE, rich
+tool results, generated child keys, operation identity, and provider metadata are
+not public HTTP fields. The STATE returned internally by M4B2 is the initial
+pre-mutation snapshot and is deliberately not exposed as current state.
+
+The HTTP key is the trusted turn key; M4B2 derives mutation child keys from that
+key and zero-based tool slots. After a successful turn response is durably
+recorded, an exact retry for the same trusted user, FoodDay, key, and message
+returns the first stored public response without loading STATE, calling the
+model, or executing tools. Reusing that scoped key with a changed message is an
+idempotency conflict. Completed-turn persistence stores no STATE, tool results,
+provider IDs, or conversation history.
+
+This is completed-result replay, not in-flight request coalescing. Concurrent
+duplicates that both miss before either result is recorded may both consume
+model work and may both reach tool execution. Tool mutations retain their own
+idempotency/conflict protection. The final result insert race stores one
+immutable winner; both callers adopt that first persisted response. If response
+persistence fails after tools commit, their independently idempotent mutations
+remain authoritative and a later retry may run model reasoning again.
+
+Missing/cross-account FoodDays share the sanitized 404 response. Existing
+operation and revision conflicts retain their established mappings. Known model
+protocol failures return a fixed 502 response; all other unexpected failures
+remain fixed, non-reflective 500 responses. No provider objects, IDs, request
+bodies, SDK messages, tokens, or retry keys are serialized.
+
+Normal tests inject a fake turn runner and require no OpenAI key. The opt-in HTTP
+integration suite injects a deterministic fake model while exercising real
+Supabase Auth, PostgreSQL, canonical STATE, M4B2, M4B1 tools, application
+mutations, and persistence. It proves a no-write FINAL turn and a LOG_FOOD turn
+whose exact completed retry performs no model call and creates no duplicate
+entry, revision, semantic operation, or completed-turn row. Changed-message key
+reuse conflicts before model or ledger execution.
+The existing `test:integration:http` command runs it with the other host HTTP
+suites; it makes no paid OpenAI request.
 
 ## Application-owned mutation identity
 

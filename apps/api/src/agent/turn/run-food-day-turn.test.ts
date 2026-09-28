@@ -211,16 +211,19 @@ describe("runFoodDayTurn input and initial STATE", () => {
     expect(stateQuery).toHaveBeenCalledTimes(1);
   });
 
-  it("trims the user message and passes the same initial STATE object to both model methods", async () => {
+  it("preserves the exact user message and passes the same initial STATE object to both model methods", async () => {
     const { dependencies, decide, finalize } = setup({
       type: "TOOLS",
       calls: [logCall],
     });
     await runFoodDayTurn(dependencies, trustedInput);
     expect(decide).toHaveBeenCalledExactlyOnceWith({
-      userMessage: "Add lunch",
+      userMessage: trustedInput.userMessage,
       state: initialState,
     });
+    expect(finalize.mock.calls[0]?.[0].userMessage).toBe(
+      trustedInput.userMessage,
+    );
     expect(decide.mock.calls[0]?.[0].state).toBe(initialState);
     expect(finalize.mock.calls[0]?.[0].state).toBe(initialState);
   });
@@ -532,7 +535,7 @@ describe("runFoodDayTurn trusted tool execution", () => {
     });
     const result = await runFoodDayTurn(dependencies, trustedInput);
     expect(finalize).toHaveBeenCalledExactlyOnceWith({
-      userMessage: "Add lunch",
+      userMessage: trustedInput.userMessage,
       state: initialState,
       toolResults: [logResult, updateResult],
     });

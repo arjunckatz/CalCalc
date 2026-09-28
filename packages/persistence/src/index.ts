@@ -26,6 +26,15 @@ export {
   type UpdateFoodDayRecord,
 } from "./postgres/food-day-repository.js";
 export {
+  CompletedFoodDayTurnPersistenceError,
+  FoodDayTurnIdempotencyConflictError,
+  PostgresFoodDayTurnResultRepository,
+  type CompletedFoodDayTurnSave,
+  type CompletedFoodDayTurnStore,
+  type FindCompletedFoodDayTurnInput,
+  type SaveCompletedFoodDayTurnInput,
+} from "./postgres/food-day-turn-result-repository.js";
+export {
   FoodEntryNotFoundError,
   FoodEntryRevisionConflictError,
   PostgresFoodEntryRepository,
@@ -60,6 +69,7 @@ export {
 export type {
   ConsumedTimePrecision,
   FoodDayCompleteness,
+  FoodDayTurnResultRow,
   FoodDayRow,
   FoodEntryRevisionRow,
   FoodEntryRow,
@@ -67,6 +77,7 @@ export type {
   JsonPrimitive,
   JsonValue,
   PersistedFoodDay,
+  PersistedFoodDayTurnResult,
   PersistedFoodEntry,
   PersistedSemanticOperation,
   SemanticOperationRow,

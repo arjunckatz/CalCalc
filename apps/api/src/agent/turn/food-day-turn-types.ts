@@ -35,3 +35,8 @@ export interface FoodDayTurnResult {
   readonly state: FoodDayState;
   readonly toolResults: readonly FoodDayToolResult[];
 }
+
+/** Deliberately small boundary returned by durable replay and HTTP composition. */
+export interface FoodDayTurnPublicResult {
+  readonly response: string;
+}

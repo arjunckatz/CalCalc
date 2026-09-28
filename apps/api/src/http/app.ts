@@ -1,6 +1,8 @@
 import type { ServerResponse } from "node:http";
 
 import {
+  FoodDayNotFoundError,
+  FoodDayTurnIdempotencyConflictError,
   FoodEntryNotFoundError,
   FoodEntryRevisionConflictError,
   PostgresFoodDayRepository,
@@ -15,6 +17,13 @@ import {
   AuthenticationError,
   type AccessTokenVerifier,
 } from "../auth/authorization.js";
+import { OpenAIFoodDayModelProtocolError } from "../agent/providers/openai/openai-food-day-turn-model.js";
+import type { FoodDayTurnRunner } from "../agent/turn/create-food-day-turn-runner.js";
+import {
+  FoodDayTurnExecutionError,
+  FoodDayTurnValidationError,
+} from "../agent/turn/run-food-day-turn.js";
+import { ToolValidationError } from "../agent/tools/food-day-tools.js";
 import { authenticatedHandler } from "./authenticated-handler.js";
 import { toFoodDayDto } from "./food-day-dto.js";
 import {
@@ -36,11 +45,17 @@ import {
   InvalidRemoveFoodEntryRequestError,
   removeFoodEntryHandler,
 } from "./remove-food-entry.js";
+import {
+  foodDayTurnHandler,
+  InvalidFoodDayTurnRequestError,
+} from "./food-day-turn.js";
 
 export interface ApiAppDependencies {
   readonly authVerifier: AccessTokenVerifier;
   readonly postgres: PostgresExecutor;
   readonly transactionRunner: PostgresTransactionRunner;
+  /** Omission keeps reusable/test app construction independent of model config. */
+  readonly foodDayTurn?: FoodDayTurnRunner;
 }
 
 const uuidPattern =
@@ -64,7 +79,25 @@ export function createApiApp(
   const foodDays = new PostgresFoodDayRepository(dependencies.postgres);
 
   app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof InvalidRemoveFoodEntryRequestError) {
+    const failure =
+      error instanceof FoodDayTurnExecutionError ? error.cause : error;
+    if (failure instanceof InvalidFoodDayTurnRequestError) {
+      if (failure.reason === "INVALID_FOOD_DAY_ID") {
+        return reply.code(400).send({
+          error: {
+            code: "INVALID_FOOD_DAY_ID",
+            message: "Food day ID must be a UUID.",
+          },
+        });
+      }
+      return reply.code(400).send({
+        error: {
+          code: "INVALID_FOOD_DAY_TURN",
+          message: "Invalid FoodDay turn request.",
+        },
+      });
+    }
+    if (failure instanceof InvalidRemoveFoodEntryRequestError) {
       return reply.code(400).send({
         error: {
           code: "INVALID_REMOVE_FOOD_ENTRY",
@@ -72,7 +105,7 @@ export function createApiApp(
         },
       });
     }
-    if (error instanceof InvalidUpdateFoodEntryRequestError) {
+    if (failure instanceof InvalidUpdateFoodEntryRequestError) {
       return reply.code(400).send({
         error: {
           code: "INVALID_UPDATE_FOOD_ENTRY",
@@ -80,7 +113,7 @@ export function createApiApp(
         },
       });
     }
-    if (error instanceof InvalidCreateFoodEntryRequestError) {
+    if (failure instanceof InvalidCreateFoodEntryRequestError) {
       return reply.code(400).send({
         error: {
           code: "INVALID_CREATE_FOOD_ENTRY",
@@ -88,7 +121,7 @@ export function createApiApp(
         },
       });
     }
-    if (error instanceof InvalidCreateFoodDayCommandError) {
+    if (failure instanceof InvalidCreateFoodDayCommandError) {
       return reply.code(400).send({
         error: {
           code: "INVALID_CREATE_FOOD_DAY",
@@ -97,8 +130,8 @@ export function createApiApp(
       });
     }
     if (
-      error instanceof MutationIdentityError &&
-      error.reason === "INVALID_IDEMPOTENCY_KEY"
+      failure instanceof MutationIdentityError &&
+      failure.reason === "INVALID_IDEMPOTENCY_KEY"
     ) {
       return reply.code(400).send({
         error: {
@@ -107,7 +140,10 @@ export function createApiApp(
         },
       });
     }
-    if (error instanceof SemanticOperationIdempotencyConflictError) {
+    if (
+      failure instanceof SemanticOperationIdempotencyConflictError ||
+      failure instanceof FoodDayTurnIdempotencyConflictError
+    ) {
       return reply.code(409).send({
         error: {
           code: "IDEMPOTENCY_CONFLICT",
@@ -115,7 +151,7 @@ export function createApiApp(
         },
       });
     }
-    if (error instanceof FoodEntryRevisionConflictError) {
+    if (failure instanceof FoodEntryRevisionConflictError) {
       return reply.code(409).send({
         error: {
           code: "FOOD_ENTRY_REVISION_CONFLICT",
@@ -123,14 +159,17 @@ export function createApiApp(
         },
       });
     }
-    if (error instanceof FoodEntryNotFoundError) {
+    if (
+      failure instanceof FoodEntryNotFoundError ||
+      failure instanceof FoodDayNotFoundError
+    ) {
       return reply.code(404).send({
         error: { code: "NOT_FOUND", message: "Resource not found." },
       });
     }
     if (
-      error instanceof SemanticOperationStateConflictError &&
-      (error.actualStatus === "PENDING" || error.actualStatus === "FAILED")
+      failure instanceof SemanticOperationStateConflictError &&
+      (failure.actualStatus === "PENDING" || failure.actualStatus === "FAILED")
     ) {
       return reply.code(409).send({
         error: {
@@ -140,15 +179,15 @@ export function createApiApp(
       });
     }
     if (
-      error instanceof Fastify.errorCodes.FST_ERR_CTP_INVALID_JSON_BODY ||
-      error instanceof Fastify.errorCodes.FST_ERR_CTP_EMPTY_JSON_BODY ||
-      error instanceof Fastify.errorCodes.FST_ERR_CTP_INVALID_CONTENT_LENGTH
+      failure instanceof Fastify.errorCodes.FST_ERR_CTP_INVALID_JSON_BODY ||
+      failure instanceof Fastify.errorCodes.FST_ERR_CTP_EMPTY_JSON_BODY ||
+      failure instanceof Fastify.errorCodes.FST_ERR_CTP_INVALID_CONTENT_LENGTH
     ) {
       return reply.code(400).send({
         error: { code: "INVALID_REQUEST", message: "Invalid request." },
       });
     }
-    if (error instanceof Fastify.errorCodes.FST_ERR_CTP_INVALID_MEDIA_TYPE) {
+    if (failure instanceof Fastify.errorCodes.FST_ERR_CTP_INVALID_MEDIA_TYPE) {
       return reply.code(415).send({
         error: {
           code: "UNSUPPORTED_MEDIA_TYPE",
@@ -156,7 +195,7 @@ export function createApiApp(
         },
       });
     }
-    if (error instanceof Fastify.errorCodes.FST_ERR_CTP_BODY_TOO_LARGE) {
+    if (failure instanceof Fastify.errorCodes.FST_ERR_CTP_BODY_TOO_LARGE) {
       return reply.code(413).send({
         error: {
           code: "PAYLOAD_TOO_LARGE",
@@ -164,11 +203,33 @@ export function createApiApp(
         },
       });
     }
-    if (error instanceof AuthenticationError) {
+    if (failure instanceof AuthenticationError) {
       return reply.code(401).send({
         error: {
           code: "UNAUTHENTICATED",
           message: "Authentication required.",
+        },
+      });
+    }
+    if (
+      failure instanceof OpenAIFoodDayModelProtocolError ||
+      failure instanceof ToolValidationError ||
+      (failure instanceof FoodDayTurnValidationError &&
+        (failure.reason === "INVALID_MODEL_DECISION" ||
+          failure.reason === "INVALID_FINAL_TEXT"))
+    ) {
+      return reply.code(502).send({
+        error: {
+          code: "MODEL_PROVIDER_ERROR",
+          message: "The conversational model could not complete the request.",
+        },
+      });
+    }
+    if (failure instanceof FoodDayTurnValidationError) {
+      return reply.code(400).send({
+        error: {
+          code: "INVALID_FOOD_DAY_TURN",
+          message: "Invalid FoodDay turn request.",
         },
       });
     }
@@ -251,6 +312,21 @@ export function createApiApp(
       removeFoodEntryHandler(dependencies.transactionRunner),
     ),
   );
+  if (dependencies.foodDayTurn !== undefined) {
+    app.post<{
+      Params: { foodDayId: string };
+      Body: unknown;
+    }>(
+      "/v1/food-days/:foodDayId/turns",
+      authenticatedHandler<{
+        Params: { foodDayId: string };
+        Body: unknown;
+      }>(
+        dependencies.authVerifier,
+        foodDayTurnHandler(dependencies.foodDayTurn),
+      ),
+    );
+  }
   return app;
 }
 
