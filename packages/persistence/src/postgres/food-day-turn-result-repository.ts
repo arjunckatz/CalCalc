@@ -13,6 +13,7 @@ export interface FindCompletedFoodDayTurnInput {
 
 export interface SaveCompletedFoodDayTurnInput extends FindCompletedFoodDayTurnInput {
   readonly id: string;
+  readonly userMessage: string;
   readonly response: string;
 }
 
@@ -72,6 +73,14 @@ export class PostgresFoodDayTurnResultRepository implements CompletedFoodDayTurn
   async saveCompleted(
     input: SaveCompletedFoodDayTurnInput,
   ): Promise<CompletedFoodDayTurnSave> {
+    if (
+      typeof input.userMessage !== "string" ||
+      input.userMessage.trim() === ""
+    ) {
+      throw new TypeError(
+        "Completed FoodDay turn user message must not be blank.",
+      );
+    }
     if (typeof input.response !== "string" || input.response.trim() === "") {
       throw new TypeError("Completed FoodDay turn response must not be blank.");
     }
@@ -82,8 +91,9 @@ export class PostgresFoodDayTurnResultRepository implements CompletedFoodDayTurn
          food_day_id,
          turn_key,
          request_fingerprint,
+         user_message,
          response
-       ) values ($1, $2, $3, $4, $5, $6)
+       ) values ($1, $2, $3, $4, $5, $6, $7)
        on conflict (user_id, turn_key) do nothing
        returning ${foodDayTurnResultColumns}`,
       [
@@ -92,6 +102,7 @@ export class PostgresFoodDayTurnResultRepository implements CompletedFoodDayTurn
         input.foodDayId,
         input.turnKey,
         input.requestFingerprint,
+        input.userMessage,
         input.response,
       ],
     );
@@ -131,6 +142,7 @@ const foodDayTurnResultColumns = `
   food_day_id,
   turn_key,
   request_fingerprint,
+  user_message,
   response,
   to_jsonb(created_at) #>> '{}' as created_at
 `;
@@ -160,6 +172,7 @@ function fromFoodDayTurnResultRow(
     foodDayId: row.food_day_id,
     turnKey: row.turn_key,
     requestFingerprint: row.request_fingerprint,
+    userMessage: row.user_message,
     response: row.response,
     createdAt: row.created_at,
   };
@@ -173,6 +186,7 @@ function parseRow(value: unknown): FoodDayTurnResultRow {
     !isString(value.food_day_id) ||
     !isString(value.turn_key) ||
     !isString(value.request_fingerprint) ||
+    !isLegacyOrNonblankString(value.user_message) ||
     !isString(value.response) ||
     value.response.trim() === "" ||
     !isString(value.created_at)
@@ -187,6 +201,7 @@ function parseRow(value: unknown): FoodDayTurnResultRow {
     food_day_id: value.food_day_id,
     turn_key: value.turn_key,
     request_fingerprint: value.request_fingerprint,
+    user_message: value.user_message,
     response: value.response,
     created_at: value.created_at,
   };
@@ -202,4 +217,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isString(value: unknown): value is string {
   return typeof value === "string";
+}
+
+function isLegacyOrNonblankString(value: unknown): value is string | null {
+  return value === null || (isString(value) && value.trim() !== "");
 }

@@ -260,6 +260,7 @@ describe.sequential("Supabase Auth account isolation through RLS", () => {
         food_day_id: dayAId,
         turn_key: turnKey,
         request_fingerprint: randomUUID(),
+        user_message: "  Private exact user message.  ",
         response: "Private completed response.",
       })
       .select("id")
@@ -268,18 +269,19 @@ describe.sequential("Supabase Auth account isolation through RLS", () => {
 
     const own = await accountA.client
       .from("food_day_turn_results")
-      .select("id, response")
+      .select("id, user_message, response")
       .eq("id", turnResultAId)
       .single();
     assertNoError(own.error, "Account A completed turn select");
     expect(own.data).toEqual({
       id: turnResultAId,
+      user_message: "  Private exact user message.  ",
       response: "Private completed response.",
     });
     await expectNoRows(
       accountB.client
         .from("food_day_turn_results")
-        .select("id")
+        .select("id, user_message")
         .eq("id", turnResultAId),
       "Account B completed turn select",
     );
@@ -291,6 +293,7 @@ describe.sequential("Supabase Auth account isolation through RLS", () => {
         food_day_id: dayAId,
         turn_key: `${turnKey}-client`,
         request_fingerprint: randomUUID(),
+        user_message: "Client-forged message.",
         response: "Client-forged response.",
       })
       .select("id");
@@ -302,7 +305,10 @@ describe.sequential("Supabase Auth account isolation through RLS", () => {
     await expectNoRows(
       accountA.client
         .from("food_day_turn_results")
-        .update({ response: "overwritten" })
+        .update({
+          user_message: "overwritten",
+          response: "overwritten",
+        })
         .eq("id", turnResultAId)
         .select("id"),
       "authenticated completed turn update",

@@ -14,6 +14,7 @@ const foodDayId = "20000000-0000-4000-8000-000000000001";
 const otherFoodDayId = "20000000-0000-4000-8000-000000000002";
 const turnKey = "calcalc:food-day-turn:v1:turn-hash";
 const fingerprint = "request-fingerprint-a";
+const userMessage = "  Exact accepted message.  ";
 const timestamp = "2026-09-28T00:00:00.000Z";
 
 interface QueryCall {
@@ -99,6 +100,7 @@ describe("PostgresFoodDayTurnResultRepository", () => {
       foodDayId,
       turnKey,
       fingerprint,
+      userMessage,
       "First durable response.",
     ]);
   });
@@ -139,6 +141,27 @@ describe("PostgresFoodDayTurnResultRepository", () => {
     ).rejects.toThrow("Completed FoodDay turn response must not be blank.");
     expect(executor.calls).toEqual([]);
   });
+
+  it("rejects blank user messages before SQL", async () => {
+    const executor = new ScriptedExecutor([]);
+    const repository = new PostgresFoodDayTurnResultRepository(executor);
+
+    await expect(
+      repository.saveCompleted(saveInput({ userMessage: "   " })),
+    ).rejects.toThrow("Completed FoodDay turn user message must not be blank.");
+    expect(executor.calls).toEqual([]);
+  });
+
+  it("hydrates a null message only for a legacy row", async () => {
+    const row = turnRow({ userMessage: null });
+    const repository = new PostgresFoodDayTurnResultRepository(
+      new ScriptedExecutor([[row]]),
+    );
+
+    await expect(repository.findCompleted(findInput())).resolves.toEqual(
+      persistedTurn(row),
+    );
+  });
 });
 
 function findInput(
@@ -160,6 +183,7 @@ function findInput(
 function saveInput(
   overrides: Partial<{
     requestFingerprint: string;
+    userMessage: string;
     response: string;
   }> = {},
 ) {
@@ -170,12 +194,13 @@ function saveInput(
         ? {}
         : { requestFingerprint: overrides.requestFingerprint },
     ),
+    userMessage: overrides.userMessage ?? userMessage,
     response: overrides.response ?? "First durable response.",
   };
 }
 
 function turnRow(
-  overrides: Partial<{ response: string }> = {},
+  overrides: Partial<{ userMessage: string | null; response: string }> = {},
 ): FoodDayTurnResultRow {
   return {
     id,
@@ -183,6 +208,8 @@ function turnRow(
     food_day_id: foodDayId,
     turn_key: turnKey,
     request_fingerprint: fingerprint,
+    user_message:
+      overrides.userMessage === undefined ? userMessage : overrides.userMessage,
     response: overrides.response ?? "First durable response.",
     created_at: timestamp,
   };
@@ -195,6 +222,7 @@ function persistedTurn(row: FoodDayTurnResultRow) {
     foodDayId: row.food_day_id,
     turnKey: row.turn_key,
     requestFingerprint: row.request_fingerprint,
+    userMessage: row.user_message,
     response: row.response,
     createdAt: row.created_at,
   };

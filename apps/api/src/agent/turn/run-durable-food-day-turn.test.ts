@@ -14,7 +14,7 @@ const input: FoodDayTurnInput = {
   trustedUserId: "10000000-0000-4000-8000-000000000001",
   foodDayId: "20000000-0000-4000-8000-000000000001",
   turnIdempotencyKey: parseIdempotencyKey("trusted-turn-key"),
-  userMessage: "Log my lunch.",
+  userMessage: "  Log my lunch.  ",
 };
 const stored: PersistedFoodDayTurnResult = {
   id: "30000000-0000-4000-8000-000000000001",
@@ -22,6 +22,7 @@ const stored: PersistedFoodDayTurnResult = {
   foodDayId: input.foodDayId,
   turnKey: deriveFoodDayTurnIdentity(input).turnKey,
   requestFingerprint: deriveFoodDayTurnIdentity(input).requestFingerprint,
+  userMessage: input.userMessage,
   response: "Stored response.",
   createdAt: "2026-09-28T00:00:00.000Z",
 };
@@ -41,6 +42,7 @@ beforeEach(() => {
       foodDayId: saved.foodDayId,
       turnKey: saved.turnKey,
       requestFingerprint: saved.requestFingerprint,
+      userMessage: saved.userMessage,
       response: saved.response,
       createdAt: "2026-09-28T00:00:00.000Z",
     },
@@ -55,7 +57,7 @@ function dependencies() {
 }
 
 describe("runDurableFoodDayTurn", () => {
-  it("runs a missed turn once and persists only its public response", async () => {
+  it("runs a missed turn once and persists its exact message with the public response", async () => {
     await expect(runDurableFoodDayTurn(dependencies(), input)).resolves.toEqual(
       { response: "Generated response." },
     );
@@ -74,6 +76,7 @@ describe("runDurableFoodDayTurn", () => {
       foodDayId: identity.canonicalFoodDayId,
       turnKey: identity.turnKey,
       requestFingerprint: identity.requestFingerprint,
+      userMessage: input.userMessage,
       response: "Generated response.",
     });
   });

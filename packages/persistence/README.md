@@ -52,8 +52,12 @@ unique per user, and its request fingerprint binds the exact message. Lookup
 replays only a matching completed response; changed request meaning conflicts.
 Insert uses `ON CONFLICT DO NOTHING` and then reads the existing winner, so a
 final insert race never overwrites the first durable public response. The table
-stores no STATE, tool results, child operation identity, provider metadata, or
-conversation history. RLS permits owners to select their rows but exposes no
+stores the exact accepted user message with the terminal public assistant
+response as one immutable successful transcript pair. Legacy pre-transcript
+rows retain a null message rather than fabricated history; future context
+loading must skip them. No STATE, tool results, child operation identity, or
+provider metadata is stored. Persisting this pair does not yet load history into
+the model. RLS permits owners to select their rows but exposes no
 authenticated insert, update, or delete policy; server persistence remains
 application-owned. Real PostgreSQL coverage is opt-in through
 `test:integration`.

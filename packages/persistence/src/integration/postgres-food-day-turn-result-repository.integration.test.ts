@@ -44,12 +44,14 @@ describe("PostgreSQL completed FoodDay-turn repository", () => {
   it("persists, replays, isolates, conflicts, and keeps the first response immutable", async () => {
     const turnKey = `calcalc:food-day-turn:v1:${randomUUID()}`;
     const requestFingerprint = `request-${randomUUID()}`;
+    const userMessage = "  Exact persisted message.  ";
     const first = await repository.saveCompleted({
       id: randomUUID(),
       userId: userA.id,
       foodDayId: dayA,
       turnKey,
       requestFingerprint,
+      userMessage,
       response: "First persisted response.",
     });
     expect(first.disposition).toBe("CREATED");
@@ -58,6 +60,7 @@ describe("PostgreSQL completed FoodDay-turn repository", () => {
       foodDayId: dayA,
       turnKey,
       requestFingerprint,
+      userMessage,
       response: "First persisted response.",
     });
     await expect(
@@ -75,6 +78,7 @@ describe("PostgreSQL completed FoodDay-turn repository", () => {
       foodDayId: dayA,
       turnKey,
       requestFingerprint,
+      userMessage,
       response: "Losing response must not overwrite.",
     });
     expect(duplicate).toEqual({ disposition: "EXISTING", turn: first.turn });
@@ -87,6 +91,7 @@ describe("PostgreSQL completed FoodDay-turn repository", () => {
         foodDayId: dayA,
         turnKey,
         requestFingerprint: `changed-${randomUUID()}`,
+        userMessage: "Changed request message.",
         response: "Changed request must not overwrite.",
       }),
     ).rejects.toBeInstanceOf(FoodDayTurnIdempotencyConflictError);
@@ -110,7 +115,7 @@ describe("PostgreSQL completed FoodDay-turn repository", () => {
     await expect(
       pool.query(
         `update public.food_day_turn_results
-         set response = 'overwritten'
+         set user_message = 'overwritten'
          where id = $1`,
         [first.turn.id],
       ),
@@ -136,11 +141,13 @@ describe("PostgreSQL completed FoodDay-turn repository", () => {
   it("resolves simultaneous identical inserts to one durable winner", async () => {
     const turnKey = `calcalc:food-day-turn:v1:${randomUUID()}`;
     const requestFingerprint = `request-${randomUUID()}`;
+    const userMessage = "  Concurrent exact message.  ";
     const base = {
       userId: userA.id,
       foodDayId: dayA,
       turnKey,
       requestFingerprint,
+      userMessage,
     };
     const [left, right] = await Promise.all([
       repository.saveCompleted({

@@ -157,6 +157,7 @@ describe.sequential(
       expect(await ledgerCounts()).toEqual(before);
       expect(await completedTurnRows()).toEqual([
         expect.objectContaining({
+          user_message: finalMessage,
           response: "No confirmed food is logged yet.",
         }),
       ]);
@@ -251,6 +252,7 @@ describe.sequential(
       expect(completedBeforeRetry).toContainEqual(
         expect.objectContaining({
           food_day_id: foodDayId,
+          user_message: logMessage,
           response: "Logged 200 g of yogurt.",
         }),
       );
@@ -317,7 +319,7 @@ async function operationRows() {
 
 async function completedTurnRows() {
   const result = await runtime.pool.query(
-    `select id, food_day_id, turn_key, request_fingerprint, response,
+    `select id, food_day_id, turn_key, request_fingerprint, user_message, response,
             to_jsonb(created_at) #>> '{}' as created_at
      from public.food_day_turn_results
      where user_id = $1

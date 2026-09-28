@@ -38,6 +38,7 @@ export async function runDurableFoodDayTurn(
   const saved = await dependencies.completedTurns.saveCompleted({
     id: randomUUID(),
     ...completedInput,
+    userMessage: input.userMessage,
     response: result.response,
   });
   return { response: saved.turn.response };

@@ -56,6 +56,7 @@ export interface FoodDayTurnResultRow {
   readonly food_day_id: string;
   readonly turn_key: string;
   readonly request_fingerprint: string;
+  readonly user_message: string | null;
   readonly response: string;
   readonly created_at: string;
 }
@@ -66,6 +67,8 @@ export interface PersistedFoodDayTurnResult {
   readonly foodDayId: string;
   readonly turnKey: string;
   readonly requestFingerprint: string;
+  /** Null only for legacy rows created before transcript persistence. */
+  readonly userMessage: string | null;
   readonly response: string;
   readonly createdAt: string;
 }

@@ -254,7 +254,10 @@ recorded, an exact retry for the same trusted user, FoodDay, key, and message
 returns the first stored public response without loading STATE, calling the
 model, or executing tools. Reusing that scoped key with a changed message is an
 idempotency conflict. Completed-turn persistence stores no STATE, tool results,
-provider IDs, or conversation history.
+or provider IDs. It retains the exact accepted user message with the terminal
+public assistant response as the minimal successful transcript pair for future
+continuity. Legacy rows may have no stored message; no transcript retrieval or
+model-context loading exists yet.
 
 This is completed-result replay, not in-flight request coalescing. Concurrent
 duplicates that both miss before either result is recorded may both consume
