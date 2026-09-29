@@ -17,6 +17,25 @@ export interface SaveCompletedFoodDayTurnInput extends FindCompletedFoodDayTurnI
   readonly response: string;
 }
 
+export const MAX_RECENT_COMPLETED_FOOD_DAY_TURNS = 20;
+
+export interface ListRecentCompletedFoodDayTurnsInput {
+  readonly userId: string;
+  readonly foodDayId: string;
+  readonly limit: number;
+}
+
+export interface CompletedFoodDayTurnTranscriptItem {
+  readonly userMessage: string;
+  readonly response: string;
+}
+
+export interface CompletedFoodDayTurnTranscriptStore {
+  listRecentCompletedForFoodDay(
+    input: ListRecentCompletedFoodDayTurnsInput,
+  ): Promise<readonly CompletedFoodDayTurnTranscriptItem[]>;
+}
+
 export type CompletedFoodDayTurnSave =
   | {
       readonly disposition: "CREATED";
@@ -58,7 +77,9 @@ export class CompletedFoodDayTurnPersistenceError extends Error {
   }
 }
 
-export class PostgresFoodDayTurnResultRepository implements CompletedFoodDayTurnStore {
+export class PostgresFoodDayTurnResultRepository
+  implements CompletedFoodDayTurnStore, CompletedFoodDayTurnTranscriptStore
+{
   constructor(private readonly executor: PostgresExecutor) {}
 
   async findCompleted(
@@ -118,6 +139,23 @@ export class PostgresFoodDayTurnResultRepository implements CompletedFoodDayTurn
     if (existing === null) throw new CompletedFoodDayTurnPersistenceError();
     assertSameRequest(existing, input);
     return { disposition: "EXISTING", turn: existing };
+  }
+
+  async listRecentCompletedForFoodDay(
+    input: ListRecentCompletedFoodDayTurnsInput,
+  ): Promise<readonly CompletedFoodDayTurnTranscriptItem[]> {
+    assertValidRecentTranscriptLimit(input.limit);
+    const result = await this.executor.query(
+      `select user_message, response
+       from public.food_day_turn_results
+       where user_id = $1
+         and food_day_id = $2
+         and user_message is not null
+       order by created_at desc, id desc
+       limit $3`,
+      [input.userId, input.foodDayId, input.limit],
+    );
+    return result.rows.map(parseTranscriptItem).reverse();
   }
 
   private async findByKey(
@@ -205,6 +243,35 @@ function parseRow(value: unknown): FoodDayTurnResultRow {
     response: value.response,
     created_at: value.created_at,
   };
+}
+
+function parseTranscriptItem(
+  value: unknown,
+): CompletedFoodDayTurnTranscriptItem {
+  if (
+    !isRecord(value) ||
+    !isString(value.user_message) ||
+    value.user_message.trim() === "" ||
+    !isString(value.response) ||
+    value.response.trim() === ""
+  ) {
+    throw new TypeError(
+      "PostgreSQL returned an invalid completed FoodDay transcript item.",
+    );
+  }
+  return { userMessage: value.user_message, response: value.response };
+}
+
+function assertValidRecentTranscriptLimit(limit: number): void {
+  if (
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > MAX_RECENT_COMPLETED_FOOD_DAY_TURNS
+  ) {
+    throw new TypeError(
+      `Recent completed FoodDay turn limit must be an integer from 1 to ${MAX_RECENT_COMPLETED_FOOD_DAY_TURNS}.`,
+    );
+  }
 }
 
 function firstRow(rows: readonly unknown[]): unknown {

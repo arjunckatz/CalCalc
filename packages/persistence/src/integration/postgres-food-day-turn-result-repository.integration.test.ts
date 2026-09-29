@@ -26,6 +26,7 @@ const userA = testUser();
 const userB = testUser();
 const dayA = randomUUID();
 const otherDayA = randomUUID();
+const transcriptDayA = randomUUID();
 const dayB = randomUUID();
 
 describe("PostgreSQL completed FoodDay-turn repository", () => {
@@ -179,6 +180,107 @@ describe("PostgreSQL completed FoodDay-turn repository", () => {
     );
     expect(count.rows[0]?.count).toBe("1");
   });
+
+  it("returns the newest bounded owned transcript in chronological order", async () => {
+    const tiePrefix = randomUUID().slice(0, 24);
+    const ids = [
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      `${tiePrefix}000000000001`,
+      `${tiePrefix}000000000002`,
+    ];
+    const transcript = [
+      ["Message A", "Response A", "2026-09-29T00:01:00.000Z"],
+      ["Message B", "Response B", "2026-09-29T00:02:00.000Z"],
+      ["  Message C  ", "  Response C  ", "2026-09-29T00:03:00.000Z"],
+      ["Message D", "Response D", "2026-09-29T00:04:00.000Z"],
+      ["Message E", "Response E", "2026-09-29T00:04:00.000Z"],
+    ] as const;
+    for (const [
+      index,
+      [message, response, createdAt],
+    ] of transcript.entries()) {
+      await insertTranscriptFixture({
+        id: ids[index] ?? randomUUID(),
+        userId: userA.id,
+        foodDayId: transcriptDayA,
+        userMessage: message,
+        response,
+        createdAt,
+      });
+    }
+    await insertTranscriptFixture({
+      id: randomUUID(),
+      userId: userA.id,
+      foodDayId: otherDayA,
+      userMessage: "Other FoodDay message",
+      response: "Other FoodDay response",
+      createdAt: "2026-09-29T00:05:00.000Z",
+    });
+    await insertTranscriptFixture({
+      id: randomUUID(),
+      userId: userB.id,
+      foodDayId: dayB,
+      userMessage: "Other user message",
+      response: "Other user response",
+      createdAt: "2026-09-29T00:05:00.000Z",
+    });
+
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      // NOT VALID constraints still reject new invalid rows. Simulate one
+      // historical row transactionally, then roll the schema change back.
+      await client.query(
+        `alter table public.food_day_turn_results
+         drop constraint food_day_turn_results_user_message_nonblank`,
+      );
+      await client.query(
+        `insert into public.food_day_turn_results (
+           id, user_id, food_day_id, turn_key, request_fingerprint,
+           user_message, response, created_at
+         ) values ($1, $2, $3, $4, $5, null, $6, $7)`,
+        [
+          randomUUID(),
+          userA.id,
+          transcriptDayA,
+          `integration-turn-${randomUUID()}`,
+          `integration-request-${randomUUID()}`,
+          "Legacy response must be skipped",
+          "2026-09-29T00:06:00.000Z",
+        ],
+      );
+      const transactionRepository = new PostgresFoodDayTurnResultRepository(
+        client,
+      );
+
+      await expect(
+        transactionRepository.listRecentCompletedForFoodDay({
+          userId: userA.id,
+          foodDayId: transcriptDayA,
+          limit: 3,
+        }),
+      ).resolves.toEqual([
+        { userMessage: "  Message C  ", response: "  Response C  " },
+        { userMessage: "Message D", response: "Response D" },
+        { userMessage: "Message E", response: "Response E" },
+      ]);
+      await expect(
+        transactionRepository.listRecentCompletedForFoodDay({
+          userId: userA.id,
+          foodDayId: dayB,
+          limit: 3,
+        }),
+      ).resolves.toEqual([]);
+    } finally {
+      try {
+        await client.query("rollback");
+      } finally {
+        client.release();
+      }
+    }
+  });
 });
 
 function testUser(): TestUser {
@@ -207,8 +309,35 @@ async function createFixtures(): Promise<void> {
      ) values
        ($1, $2, 'OPEN', 'UNKNOWN', 2100, 120),
        ($3, $2, 'OPEN', 'UNKNOWN', 2100, 120),
-       ($4, $5, 'OPEN', 'UNKNOWN', 2100, 120)`,
-    [dayA, userA.id, otherDayA, dayB, userB.id],
+       ($4, $2, 'OPEN', 'UNKNOWN', 2100, 120),
+       ($5, $6, 'OPEN', 'UNKNOWN', 2100, 120)`,
+    [dayA, userA.id, otherDayA, transcriptDayA, dayB, userB.id],
+  );
+}
+
+async function insertTranscriptFixture(input: {
+  readonly id: string;
+  readonly userId: string;
+  readonly foodDayId: string;
+  readonly userMessage: string;
+  readonly response: string;
+  readonly createdAt: string;
+}): Promise<void> {
+  await pool.query(
+    `insert into public.food_day_turn_results (
+       id, user_id, food_day_id, turn_key, request_fingerprint,
+       user_message, response, created_at
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      input.id,
+      input.userId,
+      input.foodDayId,
+      `integration-turn-${randomUUID()}`,
+      `integration-request-${randomUUID()}`,
+      input.userMessage,
+      input.response,
+      input.createdAt,
+    ],
   );
 }
 

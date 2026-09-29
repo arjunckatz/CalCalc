@@ -28,10 +28,14 @@ export {
 export {
   CompletedFoodDayTurnPersistenceError,
   FoodDayTurnIdempotencyConflictError,
+  MAX_RECENT_COMPLETED_FOOD_DAY_TURNS,
   PostgresFoodDayTurnResultRepository,
+  type CompletedFoodDayTurnTranscriptItem,
+  type CompletedFoodDayTurnTranscriptStore,
   type CompletedFoodDayTurnSave,
   type CompletedFoodDayTurnStore,
   type FindCompletedFoodDayTurnInput,
+  type ListRecentCompletedFoodDayTurnsInput,
   type SaveCompletedFoodDayTurnInput,
 } from "./postgres/food-day-turn-result-repository.js";
 export {

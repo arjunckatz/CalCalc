@@ -4,6 +4,7 @@ import type { FoodDayTurnResultRow } from "../types.js";
 import type { PostgresExecutor } from "./food-entry-repository.js";
 import {
   FoodDayTurnIdempotencyConflictError,
+  MAX_RECENT_COMPLETED_FOOD_DAY_TURNS,
   PostgresFoodDayTurnResultRepository,
 } from "./food-day-turn-result-repository.js";
 
@@ -161,6 +162,75 @@ describe("PostgresFoodDayTurnResultRepository", () => {
     await expect(repository.findCompleted(findInput())).resolves.toEqual(
       persistedTurn(row),
     );
+  });
+
+  it.each([
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    MAX_RECENT_COMPLETED_FOOD_DAY_TURNS + 1,
+  ])("rejects invalid recent transcript limit %s before SQL", async (limit) => {
+    const executor = new ScriptedExecutor([]);
+    const repository = new PostgresFoodDayTurnResultRepository(executor);
+
+    await expect(
+      repository.listRecentCompletedForFoodDay({
+        userId,
+        foodDayId,
+        limit,
+      }),
+    ).rejects.toThrow(
+      `Recent completed FoodDay turn limit must be an integer from 1 to ${MAX_RECENT_COMPLETED_FOOD_DAY_TURNS}.`,
+    );
+    expect(executor.calls).toEqual([]);
+  });
+
+  it("selects the newest bounded owned transcript and returns it oldest to newest", async () => {
+    const executor = new ScriptedExecutor([
+      [
+        {
+          user_message: "  Newest exact message.  ",
+          response: "Newest exact response.",
+          id: "private-newest-id",
+          request_fingerprint: "private-newest-fingerprint",
+        },
+        {
+          user_message: "Older exact message.",
+          response: "  Older exact response.  ",
+          id: "private-older-id",
+          request_fingerprint: "private-older-fingerprint",
+        },
+      ],
+    ]);
+    const repository = new PostgresFoodDayTurnResultRepository(executor);
+
+    await expect(
+      repository.listRecentCompletedForFoodDay({
+        userId,
+        foodDayId,
+        limit: 2,
+      }),
+    ).resolves.toEqual([
+      {
+        userMessage: "Older exact message.",
+        response: "  Older exact response.  ",
+      },
+      {
+        userMessage: "  Newest exact message.  ",
+        response: "Newest exact response.",
+      },
+    ]);
+
+    expect(executor.calls[0]?.values).toEqual([userId, foodDayId, 2]);
+    const sql = normalizeSql(executor.calls[0]?.queryText);
+    expect(sql).toContain(
+      "where user_id = $1 and food_day_id = $2 and user_message is not null",
+    );
+    expect(sql).toContain("order by created_at desc, id desc limit $3");
+    expect(sql).not.toContain("request_fingerprint");
+    expect(sql).not.toContain("turn_key");
   });
 });
 

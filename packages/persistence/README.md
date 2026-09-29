@@ -62,6 +62,12 @@ authenticated insert, update, or delete policy; server persistence remains
 application-owned. Real PostgreSQL coverage is opt-in through
 `test:integration`.
 
+The completed-turn repository can retrieve at most 20 recent successful
+transcript pairs for one trusted user and FoodDay. It selects the newest bounded
+window deterministically, skips legacy rows without a stored user message, and
+returns the selected exact message/response pairs in oldest-to-newest order.
+This retrieval primitive is not yet consumed by the model.
+
 Exactly-once FoodEntry creation claims the semantic operation, creates the
 FoodEntry, and records semantic success on one transaction-bound PostgreSQL
 executor. Successful same-fingerprint retries replay the canonical FoodEntry
