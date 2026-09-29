@@ -10,9 +10,15 @@ export interface FoodDayTurnInput {
   readonly userMessage: string;
 }
 
+export interface FoodDayTurnTranscriptItem {
+  readonly userMessage: string;
+  readonly response: string;
+}
+
 export interface FoodDayModelDecisionInput {
   readonly userMessage: string;
   readonly state: FoodDayState;
+  readonly recentTranscript: readonly FoodDayTurnTranscriptItem[];
 }
 
 export type FoodDayModelDecision =

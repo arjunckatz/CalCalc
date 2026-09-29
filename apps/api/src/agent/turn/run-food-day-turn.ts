@@ -16,6 +16,7 @@ import type {
   FoodDayTurnInput,
   FoodDayTurnModel,
   FoodDayTurnResult,
+  FoodDayTurnTranscriptItem,
 } from "./food-day-turn-types.js";
 import { deriveFoodDayToolIdempotencyKey } from "./turn-idempotency.js";
 
@@ -24,6 +25,10 @@ export const MAX_FOOD_DAY_TOOL_CALLS_PER_TURN = 8;
 export interface RunFoodDayTurnDependencies extends ListFoodEntriesForFoodDayDependencies {
   readonly transactionRunner: PostgresTransactionRunner;
   readonly model: FoodDayTurnModel;
+  readonly loadRecentTranscript: (input: {
+    readonly trustedUserId: string;
+    readonly foodDayId: string;
+  }) => Promise<readonly FoodDayTurnTranscriptItem[]>;
 }
 
 type FoodDayTurnValidationReason =
@@ -82,8 +87,12 @@ export async function runFoodDayTurn(
     trustedUserId: input.trustedUserId,
     foodDayId: input.foodDayId,
   });
+  const recentTranscript = await dependencies.loadRecentTranscript({
+    trustedUserId: input.trustedUserId,
+    foodDayId: input.foodDayId,
+  });
   const decision = parseDecision(
-    await dependencies.model.decide({ userMessage, state }),
+    await dependencies.model.decide({ userMessage, state, recentTranscript }),
   );
   if (decision.type === "FINAL") {
     return { response: decision.text, state, toolResults: [] };
@@ -120,7 +129,12 @@ export async function runFoodDayTurn(
   }
 
   const response = validText(
-    await dependencies.model.finalize({ userMessage, state, toolResults }),
+    await dependencies.model.finalize({
+      userMessage,
+      state,
+      recentTranscript,
+      toolResults,
+    }),
     "INVALID_FINAL_TEXT",
   );
   return { response, state, toolResults };

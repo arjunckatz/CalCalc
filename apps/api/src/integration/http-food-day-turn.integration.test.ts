@@ -22,8 +22,8 @@ const runtime = createPostgresRuntime({
 const admin = authClient(secretKey);
 const createdUserIds: string[] = [];
 const foodDayId = randomUUID();
-const finalMessage = "What are my confirmed totals?";
-const logMessage = "  Log 200 g of yogurt.  ";
+const finalMessage = "  I ate yogurt.  ";
+const logMessage = "Make that 200 g.";
 
 interface Account {
   readonly id: string;
@@ -34,7 +34,7 @@ let account: Account;
 
 const decide = vi.fn<FoodDayTurnModel["decide"]>(async (input) => {
   if (input.userMessage === finalMessage) {
-    return { type: "FINAL", text: "No confirmed food is logged yet." };
+    return { type: "FINAL", text: "How much yogurt did you have?" };
   }
   if (input.userMessage !== logMessage) {
     throw new Error("Unexpected integration model message.");
@@ -151,19 +151,20 @@ describe.sequential(
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({
-        response: "No confirmed food is logged yet.",
+        response: "How much yogurt did you have?",
       });
       expect(Object.keys(response.json())).toEqual(["response"]);
       expect(await ledgerCounts()).toEqual(before);
       expect(await completedTurnRows()).toEqual([
         expect.objectContaining({
           user_message: finalMessage,
-          response: "No confirmed food is logged yet.",
+          response: "How much yogurt did you have?",
         }),
       ]);
       expect(finalize).not.toHaveBeenCalled();
       expect(decide).toHaveBeenLastCalledWith({
         userMessage: finalMessage,
+        recentTranscript: [],
         state: {
           foodDay: {
             id: foodDayId,
@@ -191,8 +192,26 @@ describe.sequential(
       expect(first.statusCode).toBe(200);
       expect(first.json()).toEqual({ response: "Logged 200 g of yogurt." });
       expect(Object.keys(first.json())).toEqual(["response"]);
+      expect(decide).toHaveBeenLastCalledWith({
+        userMessage: logMessage,
+        recentTranscript: [
+          {
+            userMessage: finalMessage,
+            response: "How much yogurt did you have?",
+          },
+        ],
+        state: expect.objectContaining({
+          foodDay: expect.objectContaining({ id: foodDayId }),
+        }),
+      });
       const firstFinalization = finalize.mock.calls.at(-1)?.[0];
       expect(firstFinalization?.userMessage).toBe(logMessage);
+      expect(firstFinalization?.recentTranscript).toEqual([
+        {
+          userMessage: finalMessage,
+          response: "How much yogurt did you have?",
+        },
+      ]);
       expect(firstFinalization?.state.entries).toEqual([]);
       expect(firstFinalization?.toolResults).toHaveLength(1);
       expect(firstFinalization?.toolResults[0]).toMatchObject({

@@ -14,6 +14,8 @@ import type {
 import { runDurableFoodDayTurn } from "./run-durable-food-day-turn.js";
 import { runFoodDayTurn } from "./run-food-day-turn.js";
 
+export const RECENT_FOOD_DAY_TRANSCRIPT_LIMIT = 8;
+
 export type FoodDayTurnRunner = (
   input: FoodDayTurnInput,
 ) => Promise<FoodDayTurnPublicResult>;
@@ -44,6 +46,12 @@ export function createFoodDayTurnRunner(
               foodEntries,
               transactionRunner: dependencies.transactionRunner,
               model: dependencies.model,
+              loadRecentTranscript: async ({ trustedUserId, foodDayId }) =>
+                completedTurns.listRecentCompletedForFoodDay({
+                  userId: trustedUserId,
+                  foodDayId,
+                  limit: RECENT_FOOD_DAY_TRANSCRIPT_LIMIT,
+                }),
             },
             turnInput,
           ),

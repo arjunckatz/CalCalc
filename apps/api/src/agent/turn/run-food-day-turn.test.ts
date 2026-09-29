@@ -58,6 +58,12 @@ const initialState: FoodDayState = {
   },
   entries: [],
 };
+const recentTranscript = [
+  {
+    userMessage: "  Earlier exact message.  ",
+    response: "  Earlier exact response.  ",
+  },
+] as const;
 const entry = createFoodEntry({
   id: "30000000-0000-4000-8000-000000000001",
   foodDayId: trustedInput.foodDayId,
@@ -129,13 +135,17 @@ function setup(decision: unknown = { type: "FINAL", text: "Lunch noted." }) {
   const finalize = vi.fn<FoodDayTurnModel["finalize"]>();
   decide.mockResolvedValue(decision as FoodDayModelDecision);
   finalize.mockResolvedValue("Lunch recorded.");
+  const loadRecentTranscript =
+    vi.fn<RunFoodDayTurnDependencies["loadRecentTranscript"]>();
+  loadRecentTranscript.mockResolvedValue(recentTranscript);
   const dependencies: RunFoodDayTurnDependencies = {
     foodDays: { findById: vi.fn() },
     foodEntries: { listActiveByFoodDay: vi.fn() },
     transactionRunner: { runInTransaction: vi.fn() },
     model: { decide, finalize },
+    loadRecentTranscript,
   };
-  return { dependencies, decide, finalize };
+  return { dependencies, decide, finalize, loadRecentTranscript };
 }
 
 async function rejected(promise: Promise<unknown>): Promise<unknown> {
@@ -195,23 +205,31 @@ describe("runFoodDayTurn input and initial STATE", () => {
     });
   });
 
-  it("loads STATE exactly once before asking the model to decide", async () => {
+  it("loads STATE once, then transcript once, before asking the model to decide", async () => {
     const events: string[] = [];
-    const { dependencies, decide } = setup();
+    const { dependencies, decide, loadRecentTranscript } = setup();
     stateQuery.mockImplementationOnce(async () => {
       events.push("STATE");
       return initialState;
+    });
+    loadRecentTranscript.mockImplementationOnce(async () => {
+      events.push("transcript");
+      return recentTranscript;
     });
     decide.mockImplementationOnce(async () => {
       events.push("decide");
       return { type: "FINAL", text: "Done." };
     });
     await runFoodDayTurn(dependencies, trustedInput);
-    expect(events).toEqual(["STATE", "decide"]);
+    expect(events).toEqual(["STATE", "transcript", "decide"]);
     expect(stateQuery).toHaveBeenCalledTimes(1);
+    expect(loadRecentTranscript).toHaveBeenCalledExactlyOnceWith({
+      trustedUserId: trustedInput.trustedUserId,
+      foodDayId: trustedInput.foodDayId,
+    });
   });
 
-  it("preserves the exact user message and passes the same initial STATE object to both model methods", async () => {
+  it("preserves exact text and passes the same STATE and transcript snapshot to both model methods", async () => {
     const { dependencies, decide, finalize } = setup({
       type: "TOOLS",
       calls: [logCall],
@@ -220,18 +238,35 @@ describe("runFoodDayTurn input and initial STATE", () => {
     expect(decide).toHaveBeenCalledExactlyOnceWith({
       userMessage: trustedInput.userMessage,
       state: initialState,
+      recentTranscript,
     });
     expect(finalize.mock.calls[0]?.[0].userMessage).toBe(
       trustedInput.userMessage,
     );
     expect(decide.mock.calls[0]?.[0].state).toBe(initialState);
     expect(finalize.mock.calls[0]?.[0].state).toBe(initialState);
+    expect(decide.mock.calls[0]?.[0].recentTranscript).toBe(recentTranscript);
+    expect(finalize.mock.calls[0]?.[0].recentTranscript).toBe(recentTranscript);
+  });
+
+  it("stops after transcript loading fails without invoking model or tools", async () => {
+    const failure = new Error("transcript unavailable");
+    const { dependencies, decide, finalize, loadRecentTranscript } = setup();
+    loadRecentTranscript.mockRejectedValueOnce(failure);
+
+    await expect(runFoodDayTurn(dependencies, trustedInput)).rejects.toBe(
+      failure,
+    );
+    expect(stateQuery).toHaveBeenCalledTimes(1);
+    expect(decide).not.toHaveBeenCalled();
+    expect(finalize).not.toHaveBeenCalled();
+    expect(toolExecutor).not.toHaveBeenCalled();
   });
 });
 
 describe("runFoodDayTurn decision protocol", () => {
   it("returns a FINAL response with the initial STATE and an empty result list", async () => {
-    const { dependencies } = setup({
+    const { dependencies, decide } = setup({
       type: "FINAL",
       text: "  Nothing to add.  ",
     });
@@ -242,6 +277,11 @@ describe("runFoodDayTurn decision protocol", () => {
       toolResults: [],
     });
     expect(result.state).toBe(initialState);
+    expect(decide).toHaveBeenCalledExactlyOnceWith({
+      userMessage: trustedInput.userMessage,
+      state: initialState,
+      recentTranscript,
+    });
   });
 
   it("executes no tools for FINAL", async () => {
@@ -537,6 +577,7 @@ describe("runFoodDayTurn trusted tool execution", () => {
     expect(finalize).toHaveBeenCalledExactlyOnceWith({
       userMessage: trustedInput.userMessage,
       state: initialState,
+      recentTranscript,
       toolResults: [logResult, updateResult],
     });
     expect(finalize.mock.calls[0]?.[0].toolResults[0]).toBe(logResult);

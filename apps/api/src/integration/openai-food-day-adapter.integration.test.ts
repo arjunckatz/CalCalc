@@ -92,6 +92,7 @@ it("smokes the live OpenAI FoodDay adapter without executing tools", async () =>
     requests += 1;
     const finalDecision = await model.decide({
       state,
+      recentTranscript: [],
       userMessage:
         "What are my confirmed calories so far? Don't change anything.",
     });
@@ -105,7 +106,11 @@ it("smokes the live OpenAI FoodDay adapter without executing tools", async () =>
 
     stage = "LOG_FOOD decision";
     requests += 1;
-    const logDecision = await model.decide({ state, userMessage: logMessage });
+    const logDecision = await model.decide({
+      state,
+      recentTranscript: [],
+      userMessage: logMessage,
+    });
     decisionType = logDecision.type;
     if (logDecision.type !== "TOOLS" || logDecision.calls.length === 0) {
       throw new Error("Expected at least one LOG_FOOD tool call.");
@@ -134,6 +139,7 @@ it("smokes the live OpenAI FoodDay adapter without executing tools", async () =>
     requests += 1;
     const finalText = await model.finalize({
       state,
+      recentTranscript: [],
       userMessage: logMessage,
       toolResults: syntheticResult,
     });

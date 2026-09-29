@@ -1,5 +1,8 @@
 import type OpenAI from "openai";
-import type { Response } from "openai/resources/responses/responses";
+import type {
+  Response,
+  ResponseInputItem,
+} from "openai/resources/responses/responses";
 
 import type { FoodDayToolCall } from "../../tools/food-day-tools.js";
 import type {
@@ -61,10 +64,7 @@ export function createOpenAIFoodDayTurnModel({
       const response = await client.responses.create({
         model: modelId,
         instructions: decisionInstructions,
-        input: JSON.stringify({
-          state: stateForModel(input.state),
-          userMessage: input.userMessage,
-        }),
+        input: decisionInput(input),
         tools: openAIFoodDayTools,
         tool_choice: "auto",
         store: false,
@@ -96,11 +96,7 @@ export function createOpenAIFoodDayTurnModel({
       const response = await client.responses.create({
         model: modelId,
         instructions: finalizationInstructions,
-        input: JSON.stringify({
-          stateBeforeMutations: stateForModel(input.state),
-          userMessage: input.userMessage,
-          toolResults: input.toolResults,
-        }),
+        input: finalizationInput(input),
         store: false,
       });
       assertUsableResponse(response);
@@ -110,6 +106,53 @@ export function createOpenAIFoodDayTurnModel({
       return usableText(response.output_text);
     },
   };
+}
+
+function decisionInput(
+  input: FoodDayModelDecisionInput,
+): string | ResponseInputItem[] {
+  const state = stateForModel(input.state);
+  if (input.recentTranscript.length === 0) {
+    return JSON.stringify({ state, userMessage: input.userMessage });
+  }
+  return conversationalInput(
+    JSON.stringify({ canonicalFoodDayState: state }),
+    input.recentTranscript,
+    input.userMessage,
+  );
+}
+
+function finalizationInput(
+  input: FoodDayModelFinalizationInput,
+): string | ResponseInputItem[] {
+  const stateBeforeMutations = stateForModel(input.state);
+  if (input.recentTranscript.length === 0) {
+    return JSON.stringify({
+      stateBeforeMutations,
+      userMessage: input.userMessage,
+      toolResults: input.toolResults,
+    });
+  }
+  return conversationalInput(
+    JSON.stringify({ stateBeforeMutations, toolResults: input.toolResults }),
+    input.recentTranscript,
+    input.userMessage,
+  );
+}
+
+function conversationalInput(
+  authoritativeContext: string,
+  recentTranscript: FoodDayModelDecisionInput["recentTranscript"],
+  currentUserMessage: string,
+): ResponseInputItem[] {
+  return [
+    { role: "developer", content: authoritativeContext },
+    ...recentTranscript.flatMap(({ userMessage, response }) => [
+      { role: "user" as const, content: userMessage },
+      { role: "assistant" as const, content: response },
+    ]),
+    { role: "user", content: currentUserMessage },
+  ];
 }
 
 function assertUsableResponse(response: Response): void {

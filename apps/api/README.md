@@ -256,8 +256,12 @@ model, or executing tools. Reusing that scoped key with a changed message is an
 idempotency conflict. Completed-turn persistence stores no STATE, tool results,
 or provider IDs. It retains the exact accepted user message with the terminal
 public assistant response as the minimal successful transcript pair for future
-continuity. Legacy rows may have no stored message; no transcript retrieval or
-model-context loading exists yet.
+continuity. Before a new turn asks the model to decide, the application loads up
+to eight recent successful pairs for the same trusted user and FoodDay and
+supplies them in chronological order. This bounded transcript assists local
+conversational continuity only: fresh canonical STATE and current tool results
+remain authoritative for ledger facts. It is not cross-day or global memory, and
+no provider conversation state or response ID is used.
 
 This is completed-result replay, not in-flight request coalescing. Concurrent
 duplicates that both miss before either result is recorded may both consume

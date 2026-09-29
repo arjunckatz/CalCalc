@@ -49,6 +49,7 @@ export {
 } from "./agent/tools/execute-food-day-tool.js";
 export {
   createFoodDayTurnRunner,
+  RECENT_FOOD_DAY_TRANSCRIPT_LIMIT,
   type CreateFoodDayTurnRunnerDependencies,
   type FoodDayTurnRunner,
 } from "./agent/turn/create-food-day-turn-runner.js";
@@ -77,6 +78,7 @@ export type {
   FoodDayTurnModel,
   FoodDayTurnPublicResult,
   FoodDayTurnResult,
+  FoodDayTurnTranscriptItem,
 } from "./agent/turn/food-day-turn-types.js";
 export {
   createOpenAIFoodDayTurnModel,

@@ -59,6 +59,31 @@ const toolResults: readonly FoodDayToolResult[] = [
     },
   },
 ];
+const emptyTranscript = [] as const;
+const recentTranscript = [
+  { userMessage: "  I had yogurt.  ", response: "  Logged yogurt.  " },
+  { userMessage: "Make it 200 g.", response: "Updated to 200 g." },
+] as const;
+
+function decisionInput(
+  userMessage: string,
+  selectedState: FoodDayState = state,
+) {
+  return {
+    userMessage,
+    state: selectedState,
+    recentTranscript: emptyTranscript,
+  };
+}
+
+function finalizationInput(userMessage: string) {
+  return {
+    userMessage,
+    state,
+    recentTranscript: emptyTranscript,
+    toolResults,
+  };
+}
 
 function response(
   output_text = "Done.",
@@ -110,7 +135,7 @@ describe("OpenAI FoodDay decision binding", () => {
 
   it("uses the injected model and distinct decision instructions", async () => {
     const { create, model } = setup();
-    await model.decide({ userMessage: "Hello", state });
+    await model.decide(decisionInput("Hello"));
     const request = requestAt(create);
     expect(request.model).toBe("test-model");
     expect(request.instructions).toContain("canonical FoodDay STATE");
@@ -119,7 +144,7 @@ describe("OpenAI FoodDay decision binding", () => {
 
   it("serializes only canonical STATE facts and the current message as stable JSON", async () => {
     const { create, model } = setup();
-    await model.decide({ userMessage: "Add lunch", state });
+    await model.decide(decisionInput("Add lunch"));
     const input = JSON.parse(requestAt(create).input as string);
     expect(input.userMessage).toBe("Add lunch");
     expect(input.state).toEqual(state);
@@ -136,16 +161,45 @@ describe("OpenAI FoodDay decision binding", () => {
     ).toBe(false);
   });
 
+  it("represents transcript as ordered user/assistant messages before the exact current user message", async () => {
+    const { create, model } = setup();
+    await model.decide({
+      userMessage: "  Actually 250 g.  ",
+      state,
+      recentTranscript,
+    });
+
+    const request = requestAt(create);
+    expect(request.input).toEqual([
+      {
+        role: "developer",
+        content: JSON.stringify({ canonicalFoodDayState: state }),
+      },
+      { role: "user", content: "  I had yogurt.  " },
+      { role: "assistant", content: "  Logged yogurt.  " },
+      { role: "user", content: "Make it 200 g." },
+      { role: "assistant", content: "Updated to 200 g." },
+      { role: "user", content: "  Actually 250 g.  " },
+    ]);
+    expect(request.instructions).toContain(
+      "Recent transcript is conversational context only",
+    );
+    expect(request.instructions).toContain(
+      "canonical FoodDay STATE overrides it",
+    );
+    expect(request.instructions).not.toContain("I had yogurt");
+  });
+
   it("does not serialize additional runtime fields outside FoodDayState", async () => {
     const { create, model } = setup();
     const extended = { ...state, secret: "do-not-send" };
-    await model.decide({ userMessage: "Hello", state: extended });
+    await model.decide(decisionInput("Hello", extended));
     expect(requestAt(create).input).not.toContain("do-not-send");
   });
 
   it("offers exactly three functions with auto selection and disables response storage", async () => {
     const { create, model } = setup();
-    await model.decide({ userMessage: "Hello", state });
+    await model.decide(decisionInput("Hello"));
     const request = requestAt(create);
     expect(
       (request.tools as { name: string }[]).map((tool) => tool.name),
@@ -156,14 +210,14 @@ describe("OpenAI FoodDay decision binding", () => {
 
   it("sends no provider conversation or previous response ID", async () => {
     const { create, model } = setup();
-    await model.decide({ userMessage: "Hello", state });
+    await model.decide(decisionInput("Hello"));
     expect(requestAt(create)).not.toHaveProperty("previous_response_id");
     expect(requestAt(create)).not.toHaveProperty("conversation");
   });
 
   it("maps trimmed text-only output to FINAL without fabricating a tool call", async () => {
     const { model } = setup(response("  No change needed.  "));
-    expect(await model.decide({ userMessage: "Hello", state })).toEqual({
+    expect(await model.decide(decisionInput("Hello"))).toEqual({
       type: "FINAL",
       text: "No change needed.",
     });
@@ -171,9 +225,7 @@ describe("OpenAI FoodDay decision binding", () => {
 
   it.each(["", "  "])("rejects unusable decision text %j", async (text) => {
     const { model } = setup(response(text));
-    await expect(
-      model.decide({ userMessage: "Hello", state }),
-    ).rejects.toMatchObject({
+    await expect(model.decide(decisionInput("Hello"))).rejects.toMatchObject({
       name: "OpenAIFoodDayModelProtocolError",
       reason: "EMPTY_TEXT",
     });
@@ -204,7 +256,7 @@ describe("OpenAI FoodDay decision binding", () => {
               }
             : { entryId: state.entries[0]?.id, expectedRevision: 1 };
       const { model } = setup(response("", [functionCall(name, args)]));
-      const decision = await model.decide({ userMessage: "Change", state });
+      const decision = await model.decide(decisionInput("Change"));
       expect(decision).toEqual({
         type: "TOOLS",
         calls: [{ name, arguments: args }],
@@ -234,7 +286,7 @@ describe("OpenAI FoodDay decision binding", () => {
       ),
     ];
     const { model } = setup(response("", calls));
-    const decision = await model.decide({ userMessage: "Change", state });
+    const decision = await model.decide(decisionInput("Change"));
     expect(decision.type).toBe("TOOLS");
     if (decision.type === "TOOLS") {
       expect(
@@ -252,9 +304,7 @@ describe("OpenAI FoodDay decision binding", () => {
         }),
       ]),
     );
-    expect((await model.decide({ userMessage: "Remove", state })).type).toBe(
-      "TOOLS",
-    );
+    expect((await model.decide(decisionInput("Remove"))).type).toBe("TOOLS");
   });
 
   it("does not return provider call IDs or response metadata", async () => {
@@ -266,7 +316,7 @@ describe("OpenAI FoodDay decision binding", () => {
         }),
       ]),
     );
-    const decision = await model.decide({ userMessage: "Remove", state });
+    const decision = await model.decide(decisionInput("Remove"));
     expect(JSON.stringify(decision)).not.toMatch(
       /call_private|fc_private|resp_private|total_tokens/,
     );
@@ -286,7 +336,7 @@ describe("OpenAI FoodDay decision binding", () => {
       ]),
     );
     const error = await model
-      .decide({ userMessage: "Log", state })
+      .decide(decisionInput("Log"))
       .catch((value: unknown) => value);
     expect(error).toBeInstanceOf(OpenAIFoodDayModelProtocolError);
     expect(error).toMatchObject({ reason: "INVALID_FUNCTION_ARGUMENTS" });
@@ -298,7 +348,7 @@ describe("OpenAI FoodDay decision binding", () => {
     const { model } = setup(
       response("", [functionCall("REMOVE_FOOD", { entryId: "bad" })]),
     );
-    const decision = await model.decide({ userMessage: "Remove", state });
+    const decision = await model.decide(decisionInput("Remove"));
     expect(decision.type).toBe("TOOLS");
     if (decision.type === "TOOLS") {
       expect(() => parseFoodDayToolCall(decision.calls[0])).toThrow(
@@ -309,18 +359,14 @@ describe("OpenAI FoodDay decision binding", () => {
 
   it("rejects an unoffered function rather than treating it as text", async () => {
     const { model } = setup(response("Text", [functionCall("DELETE_ALL", {})]));
-    await expect(
-      model.decide({ userMessage: "Hi", state }),
-    ).rejects.toMatchObject({
+    await expect(model.decide(decisionInput("Hi"))).rejects.toMatchObject({
       reason: "UNSUPPORTED_FUNCTION",
     });
   });
 
   it("rejects an incomplete provider response as a protocol error", async () => {
     const { model } = setup(response("Partial", [], "incomplete"));
-    await expect(
-      model.decide({ userMessage: "Hi", state }),
-    ).rejects.toMatchObject({
+    await expect(model.decide(decisionInput("Hi"))).rejects.toMatchObject({
       reason: "INVALID_RESPONSE",
     });
   });
@@ -329,16 +375,14 @@ describe("OpenAI FoodDay decision binding", () => {
     const { create, model } = setup();
     const sdkError = new Error("network failure");
     create.mockRejectedValueOnce(sdkError);
-    await expect(model.decide({ userMessage: "Hi", state })).rejects.toBe(
-      sdkError,
-    );
+    await expect(model.decide(decisionInput("Hi"))).rejects.toBe(sdkError);
   });
 });
 
 describe("OpenAI FoodDay finalization binding", () => {
   it("makes a new response request with the original STATE, message, and rich tool results", async () => {
     const { create, model } = setup();
-    await model.finalize({ userMessage: "Add apple", state, toolResults });
+    await model.finalize(finalizationInput("Add apple"));
     const request = requestAt(create);
     expect(request.model).toBe("test-model");
     expect(request.instructions).toContain("Tool results are authoritative");
@@ -351,7 +395,7 @@ describe("OpenAI FoodDay finalization binding", () => {
 
   it("offers no function tools, provider conversation state, or response storage", async () => {
     const { create, model } = setup();
-    await model.finalize({ userMessage: "Add apple", state, toolResults });
+    await model.finalize(finalizationInput("Add apple"));
     const request = requestAt(create);
     expect(request).not.toHaveProperty("tools");
     expect(request).not.toHaveProperty("previous_response_id");
@@ -359,37 +403,67 @@ describe("OpenAI FoodDay finalization binding", () => {
     expect(request.store).toBe(false);
   });
 
+  it("uses the same ordered conversational history with authoritative tool context", async () => {
+    const { create, model } = setup();
+    await model.finalize({
+      userMessage: "  Actually 250 g.  ",
+      state,
+      recentTranscript,
+      toolResults,
+    });
+
+    const request = requestAt(create);
+    expect(request.input).toEqual([
+      {
+        role: "developer",
+        content: JSON.stringify({
+          stateBeforeMutations: state,
+          toolResults,
+        }),
+      },
+      { role: "user", content: "  I had yogurt.  " },
+      { role: "assistant", content: "  Logged yogurt.  " },
+      { role: "user", content: "Make it 200 g." },
+      { role: "assistant", content: "Updated to 200 g." },
+      { role: "user", content: "  Actually 250 g.  " },
+    ]);
+    expect(request.instructions).toContain(
+      "STATE and tool results override it",
+    );
+    expect(request.instructions).not.toContain("I had yogurt");
+  });
+
   it("returns trimmed provider text only, without metadata", async () => {
     const { model } = setup(response("  Apple recorded.  "));
-    expect(
-      await model.finalize({ userMessage: "Add apple", state, toolResults }),
-    ).toBe("Apple recorded.");
+    expect(await model.finalize(finalizationInput("Add apple"))).toBe(
+      "Apple recorded.",
+    );
   });
 
   it("rejects blank final text", async () => {
     const { model } = setup(response("   "));
-    await expect(
-      model.finalize({ userMessage: "Hi", state, toolResults }),
-    ).rejects.toMatchObject({
-      reason: "EMPTY_TEXT",
-    });
+    await expect(model.finalize(finalizationInput("Hi"))).rejects.toMatchObject(
+      {
+        reason: "EMPTY_TEXT",
+      },
+    );
   });
 
   it("rejects an unexpected finalization function call even if text is present", async () => {
     const { model } = setup(response("Done", [functionCall("LOG_FOOD", {})]));
-    await expect(
-      model.finalize({ userMessage: "Hi", state, toolResults }),
-    ).rejects.toMatchObject({
-      reason: "UNEXPECTED_FUNCTION_CALL",
-    });
+    await expect(model.finalize(finalizationInput("Hi"))).rejects.toMatchObject(
+      {
+        reason: "UNEXPECTED_FUNCTION_CALL",
+      },
+    );
   });
 
   it("propagates the original finalization SDK/API error unchanged", async () => {
     const { create, model } = setup();
     const sdkError = new Error("provider unavailable");
     create.mockRejectedValueOnce(sdkError);
-    await expect(
-      model.finalize({ userMessage: "Hi", state, toolResults }),
-    ).rejects.toBe(sdkError);
+    await expect(model.finalize(finalizationInput("Hi"))).rejects.toBe(
+      sdkError,
+    );
   });
 });

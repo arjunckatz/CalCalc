@@ -29,7 +29,11 @@ const stored: PersistedFoodDayTurnResult = {
 
 const findCompleted = vi.fn<CompletedFoodDayTurnStore["findCompleted"]>();
 const saveCompleted = vi.fn<CompletedFoodDayTurnStore["saveCompleted"]>();
-const runTurn = vi.fn(async () => ({ response: "Generated response." }));
+const loadRecentTranscript = vi.fn(async () => []);
+const runTurn = vi.fn(async () => {
+  await loadRecentTranscript();
+  return { response: "Generated response." };
+});
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -88,6 +92,7 @@ describe("runDurableFoodDayTurn", () => {
       { response: "Stored response." },
     );
     expect(runTurn).not.toHaveBeenCalled();
+    expect(loadRecentTranscript).not.toHaveBeenCalled();
     expect(saveCompleted).not.toHaveBeenCalled();
   });
 
@@ -118,6 +123,7 @@ describe("runDurableFoodDayTurn", () => {
       runDurableFoodDayTurn(dependencies(), changed),
     ).rejects.toBeInstanceOf(FoodDayTurnIdempotencyConflictError);
     expect(runTurn).not.toHaveBeenCalled();
+    expect(loadRecentTranscript).not.toHaveBeenCalled();
     expect(saveCompleted).not.toHaveBeenCalled();
   });
 
