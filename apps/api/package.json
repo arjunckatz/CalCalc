@@ -12,7 +12,8 @@
     "test:integration": "vitest run src/integration/postgres-runtime.integration.test.ts",
     "test:integration:auth": "vitest run src/integration/supabase-auth.integration.test.ts",
     "test:integration:http": "vitest run src/integration/http-food-day.integration.test.ts src/integration/http-create-food-day.integration.test.ts src/integration/http-create-food-entry.integration.test.ts src/integration/http-update-food-entry.integration.test.ts src/integration/http-remove-food-entry.integration.test.ts src/integration/http-food-day-turn.integration.test.ts",
-    "smoke:openai:food-day": "vitest run src/integration/openai-food-day-adapter.integration.test.ts"
+    "smoke:openai:food-day": "vitest run src/integration/openai-food-day-adapter.integration.test.ts",
+    "eval:openai:food-day-conversation": "vitest run src/integration/openai-food-day-conversation.eval.integration.test.ts"
   },
   "dependencies": {
     "@cal-calc/config": "workspace:*",

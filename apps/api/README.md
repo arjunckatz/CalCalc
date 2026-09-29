@@ -287,6 +287,15 @@ reuse conflicts before model or ledger execution.
 The existing `test:integration:http` command runs it with the other host HTTP
 suites; it makes no paid OpenAI request.
 
+### Opt-in live conversation eval
+
+With `OPENAI_API_KEY` and `OPENAI_MODEL` set locally, run
+`corepack pnpm --filter @cal-calc/api eval:openai:food-day-conversation`.
+This runs four focused same-FoodDay continuity scenarios with up to four paid
+OpenAI Responses requests against synthetic canonical STATE and recent transcript.
+It requires no database and is excluded from normal API tests and CI. A passing
+run establishes only these fixtures, not general conversational reliability.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`
