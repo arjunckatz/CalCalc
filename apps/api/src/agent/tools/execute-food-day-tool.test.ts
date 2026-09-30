@@ -1,8 +1,13 @@
 import { createFoodEntry, DomainValidationError } from "@cal-calc/domain";
-import type { PostgresTransactionRunner } from "@cal-calc/persistence";
+import {
+  SemanticOperationIdempotencyConflictError,
+  type PostgresTransactionRunner,
+} from "@cal-calc/persistence";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFoodEntryMutation } from "../../mutations/create-food-entry.js";
+import { changeFoodEntryStatusMutation } from "../../mutations/change-food-entry-status.js";
+import { deriveMutationIdentity } from "../../mutations/mutation-identity.js";
 import { parseIdempotencyKey } from "../../mutations/mutation-identity.js";
 import { removeFoodEntryMutation } from "../../mutations/remove-food-entry.js";
 import { updateFoodEntryMutation } from "../../mutations/update-food-entry.js";
@@ -18,10 +23,14 @@ vi.mock("../../mutations/update-food-entry.js", () => ({
 vi.mock("../../mutations/remove-food-entry.js", () => ({
   removeFoodEntryMutation: vi.fn(),
 }));
+vi.mock("../../mutations/change-food-entry-status.js", () => ({
+  changeFoodEntryStatusMutation: vi.fn(),
+}));
 
 const createMutation = vi.mocked(createFoodEntryMutation);
 const updateMutation = vi.mocked(updateFoodEntryMutation);
 const removeMutation = vi.mocked(removeFoodEntryMutation);
+const statusMutation = vi.mocked(changeFoodEntryStatusMutation);
 const trustedContext = {
   trustedUserId: "10000000-0000-4000-8000-000000000001",
   foodDayId: "20000000-0000-4000-8000-000000000001",
@@ -73,6 +82,14 @@ const updateCall = {
 const removeCall = {
   name: "REMOVE_FOOD",
   arguments: { entryId: entry.id, expectedRevision: 1 },
+};
+const statusCall = {
+  name: "CHANGE_FOOD_STATUS",
+  arguments: {
+    entryId: entry.id,
+    expectedRevision: 1,
+    status: "PLANNED",
+  },
 };
 
 beforeEach(() => {
@@ -174,6 +191,122 @@ describe("executeFoodDayTool", () => {
     expect(output.result).toBe(authoritative);
     expect(createMutation).not.toHaveBeenCalled();
     expect(updateMutation).not.toHaveBeenCalled();
+  });
+
+  it("delegates status change with parsed command and trusted context, preserving its authoritative result", async () => {
+    const authoritative = {
+      disposition: "APPLIED" as const,
+      entry: { ...entry, status: "PLANNED" as const, revision: 2 },
+      appliedRevision: 2,
+    };
+    statusMutation.mockResolvedValueOnce(authoritative);
+    const output = await executeFoodDayTool(
+      dependencies,
+      trustedContext,
+      statusCall,
+    );
+    expect(statusMutation).toHaveBeenCalledExactlyOnceWith(dependencies, {
+      trustedUserId: trustedContext.trustedUserId,
+      idempotencyKey: trustedContext.idempotencyKey,
+      operationScope: "FOOD_DAY_TURN_TOOL",
+      trustedFoodDayId: trustedContext.foodDayId,
+      command: statusCall.arguments,
+    });
+    expect(output).toEqual({
+      name: "CHANGE_FOOD_STATUS",
+      result: authoritative,
+    });
+    expect(output.result).toBe(authoritative);
+    expect(createMutation).not.toHaveBeenCalled();
+    expect(updateMutation).not.toHaveBeenCalled();
+    expect(removeMutation).not.toHaveBeenCalled();
+  });
+
+  it("passes the same trusted child key on retry and leaves conflict detection to the application mutation", async () => {
+    const applied = {
+      disposition: "APPLIED" as const,
+      entry: { ...entry, status: "PLANNED" as const, revision: 2 },
+      appliedRevision: 2,
+    };
+    statusMutation.mockResolvedValueOnce(applied).mockResolvedValueOnce({
+      ...applied,
+      disposition: "REPLAYED",
+    });
+    await executeFoodDayTool(dependencies, trustedContext, statusCall);
+    const replay = await executeFoodDayTool(
+      dependencies,
+      trustedContext,
+      statusCall,
+    );
+    expect(replay).toEqual({
+      name: "CHANGE_FOOD_STATUS",
+      result: { ...applied, disposition: "REPLAYED" },
+    });
+    expect(statusMutation).toHaveBeenCalledTimes(2);
+    expect(statusMutation.mock.calls[0]?.[1]).toEqual(
+      statusMutation.mock.calls[1]?.[1],
+    );
+  });
+
+  it("preserves typed same-status and idempotency errors from the application boundary", async () => {
+    const error = new DomainValidationError(
+      "Food entry status did not change.",
+    );
+    statusMutation.mockRejectedValueOnce(error);
+    await expect(
+      executeFoodDayTool(dependencies, trustedContext, statusCall),
+    ).rejects.toBe(error);
+    const conflict = new SemanticOperationIdempotencyConflictError(
+      "private-operation",
+      "old-fingerprint",
+      "new-fingerprint",
+    );
+    statusMutation.mockRejectedValueOnce(conflict);
+    await expect(
+      executeFoodDayTool(dependencies, trustedContext, {
+        ...statusCall,
+        arguments: { ...statusCall.arguments, status: "DISCARDED" },
+      }),
+    ).rejects.toBe(conflict);
+    const changed = {
+      ...statusCall,
+      arguments: { ...statusCall.arguments, status: "DISCARDED" },
+    };
+    const first = deriveMutationIdentity({
+      trustedUserId: trustedContext.trustedUserId,
+      action: "CHANGE_FOOD_ENTRY_STATUS",
+      operationScope: "FOOD_DAY_TURN_TOOL",
+      idempotencyKey: trustedContext.idempotencyKey,
+      semanticPayload: {
+        ...statusCall.arguments,
+        trustedFoodDayId: trustedContext.foodDayId,
+      },
+    });
+    const second = deriveMutationIdentity({
+      trustedUserId: trustedContext.trustedUserId,
+      action: "CHANGE_FOOD_ENTRY_STATUS",
+      operationScope: "FOOD_DAY_TURN_TOOL",
+      idempotencyKey: trustedContext.idempotencyKey,
+      semanticPayload: {
+        ...changed.arguments,
+        trustedFoodDayId: trustedContext.foodDayId,
+      },
+    });
+    const crossAction = deriveMutationIdentity({
+      trustedUserId: trustedContext.trustedUserId,
+      action: "REMOVE_FOOD_ENTRY",
+      operationScope: "FOOD_DAY_TURN_TOOL",
+      idempotencyKey: trustedContext.idempotencyKey,
+      semanticPayload: {
+        entryId: entry.id,
+        expectedRevision: 1,
+        trustedFoodDayId: trustedContext.foodDayId,
+      },
+    });
+    expect(second.operationKey).toBe(first.operationKey);
+    expect(second.requestFingerprint).not.toBe(first.requestFingerprint);
+    expect(crossAction.operationKey).toBe(first.operationKey);
+    expect(crossAction.requestFingerprint).not.toBe(first.requestFingerprint);
   });
 
   it.each([

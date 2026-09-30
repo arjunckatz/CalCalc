@@ -1,3 +1,4 @@
+import { foodEntryStatuses } from "@cal-calc/domain";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -85,11 +86,12 @@ function updateArguments() {
 }
 
 describe("OpenAI FoodDay function tools", () => {
-  it("exposes exactly the three M4B1 actions with strict function tools", () => {
+  it("exposes exactly four strict function tools", () => {
     expect(openAIFoodDayTools.map((tool) => tool.name)).toEqual([
       "LOG_FOOD",
       "UPDATE_FOOD_QUANTITY",
       "REMOVE_FOOD",
+      "CHANGE_FOOD_STATUS",
     ]);
     for (const tool of openAIFoodDayTools) {
       expect(tool.type).toBe("function");
@@ -159,6 +161,20 @@ describe("OpenAI FoodDay function tools", () => {
       "entryId",
       "expectedRevision",
     ]);
+
+    const status = parametersOf("CHANGE_FOOD_STATUS");
+    expect(Object.keys(propertiesOf(status))).toEqual([
+      "entryId",
+      "expectedRevision",
+      "status",
+    ]);
+    expect(asSchema(propertiesOf(status).entryId).type).toBe("string");
+    expect(asSchema(propertiesOf(status).expectedRevision).type).toBe(
+      "integer",
+    );
+    expect(asSchema(propertiesOf(status).status).enum).toEqual(
+      foodEntryStatuses,
+    );
   });
 
   it("uses the domain unit and evidence enums", () => {
@@ -289,5 +305,18 @@ describe("OpenAI nullable-nutrient adaptation", () => {
         arguments: preserve,
       }),
     ).toThrow(ToolValidationError);
+  });
+
+  it("leaves status arguments untouched for the provider-neutral validator", () => {
+    const args = { entryId, expectedRevision: 2, status: "PLANNED" };
+    expect(
+      normalizeOpenAIFoodDayToolArguments("CHANGE_FOOD_STATUS", args),
+    ).toBe(args);
+    expect(
+      parseFoodDayToolCall({ name: "CHANGE_FOOD_STATUS", arguments: args }),
+    ).toEqual({
+      name: "CHANGE_FOOD_STATUS",
+      arguments: args,
+    });
   });
 });

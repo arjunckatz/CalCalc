@@ -1,6 +1,7 @@
 import {
   DomainValidationError,
   evidenceClasses,
+  foodEntryStatuses,
   measurementUnits,
   parseNutritionBasis,
   parseNutritionOverride,
@@ -9,6 +10,7 @@ import {
 } from "@cal-calc/domain";
 
 import type { CreateFoodEntryCommand } from "../../mutations/create-food-entry.js";
+import type { ChangeFoodEntryStatusCommand } from "../../mutations/change-food-entry-status.js";
 import type { RemoveFoodEntryCommand } from "../../mutations/remove-food-entry.js";
 import type { UpdateFoodEntryCommand } from "../../mutations/update-food-entry.js";
 
@@ -24,6 +26,10 @@ export type FoodDayToolCall =
   | {
       readonly name: "REMOVE_FOOD";
       readonly arguments: RemoveFoodEntryCommand;
+    }
+  | {
+      readonly name: "CHANGE_FOOD_STATUS";
+      readonly arguments: ChangeFoodEntryStatusCommand;
     };
 
 const nutritionFields = [
@@ -61,6 +67,11 @@ export function parseFoodDayToolCall(input: unknown): FoodDayToolCall {
       return {
         name: "REMOVE_FOOD",
         arguments: parseRemoveArguments(call.arguments),
+      };
+    case "CHANGE_FOOD_STATUS":
+      return {
+        name: "CHANGE_FOOD_STATUS",
+        arguments: parseStatusArguments(call.arguments),
       };
     default:
       throw new ToolValidationError();
@@ -128,6 +139,16 @@ function parseRemoveArguments(input: unknown): RemoveFoodEntryCommand {
   return {
     entryId: entryId(value.entryId),
     expectedRevision: revision(value.expectedRevision),
+  };
+}
+
+function parseStatusArguments(input: unknown): ChangeFoodEntryStatusCommand {
+  const value = strictObject(input, ["entryId", "expectedRevision", "status"]);
+  requireMember(value.status, foodEntryStatuses);
+  return {
+    entryId: entryId(value.entryId),
+    expectedRevision: revision(value.expectedRevision),
+    status: value.status,
   };
 }
 

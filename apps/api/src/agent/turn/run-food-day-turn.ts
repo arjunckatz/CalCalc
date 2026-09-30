@@ -228,7 +228,8 @@ function safeToolName(value: unknown): FoodDayToolCall["name"] | undefined {
     const name = field.value;
     return name === "LOG_FOOD" ||
       name === "UPDATE_FOOD_QUANTITY" ||
-      name === "REMOVE_FOOD"
+      name === "REMOVE_FOOD" ||
+      name === "CHANGE_FOOD_STATUS"
       ? name
       : undefined;
   } catch {

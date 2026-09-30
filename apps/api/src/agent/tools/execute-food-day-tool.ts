@@ -1,6 +1,10 @@
 import type { PostgresTransactionRunner } from "@cal-calc/persistence";
 
 import {
+  changeFoodEntryStatusMutation,
+  type ChangeFoodEntryStatusMutationResult,
+} from "../../mutations/change-food-entry-status.js";
+import {
   createFoodEntryMutation,
   type CreateFoodEntryMutationResult,
 } from "../../mutations/create-food-entry.js";
@@ -33,6 +37,10 @@ export type FoodDayToolResult =
   | {
       readonly name: "REMOVE_FOOD";
       readonly result: RemoveFoodEntryMutationResult;
+    }
+  | {
+      readonly name: "CHANGE_FOOD_STATUS";
+      readonly result: ChangeFoodEntryStatusMutationResult;
     };
 
 export async function executeFoodDayTool(
@@ -68,6 +76,17 @@ export async function executeFoodDayTool(
       return {
         name: call.name,
         result: await removeFoodEntryMutation(dependencies, {
+          trustedUserId,
+          idempotencyKey,
+          operationScope: "FOOD_DAY_TURN_TOOL",
+          trustedFoodDayId: trustedContext.foodDayId,
+          command: call.arguments,
+        }),
+      };
+    case "CHANGE_FOOD_STATUS":
+      return {
+        name: call.name,
+        result: await changeFoodEntryStatusMutation(dependencies, {
           trustedUserId,
           idempotencyKey,
           operationScope: "FOOD_DAY_TURN_TOOL",

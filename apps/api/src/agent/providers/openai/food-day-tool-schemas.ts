@@ -1,4 +1,8 @@
-import { evidenceClasses, measurementUnits } from "@cal-calc/domain";
+import {
+  evidenceClasses,
+  foodEntryStatuses,
+  measurementUnits,
+} from "@cal-calc/domain";
 import type { FunctionTool } from "openai/resources/responses/responses.js";
 
 const optionalLogNutrients = [
@@ -89,6 +93,17 @@ export const openAIFoodDayTools: FunctionTool[] = [
       expectedRevision: { type: "integer" },
     }),
   },
+  {
+    type: "function",
+    name: "CHANGE_FOOD_STATUS",
+    description: "Change the canonical status of an existing FoodEntry.",
+    strict: true,
+    parameters: strictObject({
+      entryId: { type: "string" },
+      expectedRevision: { type: "integer" },
+      status: { type: "string", enum: foodEntryStatuses },
+    }),
+  },
 ];
 
 /**
@@ -96,7 +111,8 @@ export const openAIFoodDayTools: FunctionTool[] = [
  * slots to absence, leaving every other value for the M4B1 parser to judge.
  */
 export function normalizeOpenAIFoodDayToolArguments(
-  name: "LOG_FOOD" | "UPDATE_FOOD_QUANTITY" | "REMOVE_FOOD",
+  name:
+    "LOG_FOOD" | "UPDATE_FOOD_QUANTITY" | "REMOVE_FOOD" | "CHANGE_FOOD_STATUS",
   args: unknown,
 ): unknown {
   if (!isPlainDataRecord(args)) return args;

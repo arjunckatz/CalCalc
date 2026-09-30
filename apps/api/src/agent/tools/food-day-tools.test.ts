@@ -1,3 +1,4 @@
+import { foodEntryStatuses } from "@cal-calc/domain";
 import { describe, expect, it } from "vitest";
 
 import { parseFoodDayToolCall, ToolValidationError } from "./food-day-tools.js";
@@ -35,6 +36,13 @@ function updateCall() {
 
 function removeCall() {
   return { name: "REMOVE_FOOD", arguments: { entryId, expectedRevision: 3 } };
+}
+
+function statusCall() {
+  return {
+    name: "CHANGE_FOOD_STATUS",
+    arguments: { entryId, expectedRevision: 3, status: "PLANNED" },
+  };
 }
 
 describe("parseFoodDayToolCall", () => {
@@ -278,6 +286,53 @@ describe("parseFoodDayToolCall", () => {
 
   it("accepts a valid REMOVE_FOOD command unchanged", () => {
     expect(parseFoodDayToolCall(removeCall())).toEqual(removeCall());
+  });
+
+  it.each(foodEntryStatuses)("accepts canonical status %s", (status) => {
+    const call = {
+      ...statusCall(),
+      arguments: { ...statusCall().arguments, status },
+    };
+    expect(parseFoodDayToolCall(call)).toEqual(call);
+  });
+
+  it.each([
+    { status: "planned" },
+    { status: "UNKNOWN" },
+    { status: undefined },
+    { status: 1 },
+    { entryId: "not-a-uuid" },
+    { entryId: undefined },
+    { expectedRevision: 0 },
+    { expectedRevision: 1.5 },
+    { expectedRevision: "3" },
+    { expectedRevision: Number.MAX_SAFE_INTEGER + 1 },
+  ])("rejects malformed status arguments %j", (change) => {
+    expect(() =>
+      parseFoodDayToolCall({
+        ...statusCall(),
+        arguments: { ...statusCall().arguments, ...change },
+      }),
+    ).toThrow(ToolValidationError);
+  });
+
+  it.each([
+    "userId",
+    "foodDayId",
+    "idempotencyKey",
+    "operationKey",
+    "operationScope",
+    "trustedFoodDayId",
+    "quantity",
+    "nutrition",
+    "resultingRevision",
+  ])("rejects model-supplied status field %s", (field) => {
+    expect(() =>
+      parseFoodDayToolCall({
+        ...statusCall(),
+        arguments: { ...statusCall().arguments, [field]: "attacker" },
+      }),
+    ).toThrow(ToolValidationError);
   });
 
   it.each(["deletedAt", "trustedUserId", "operationKey", "foodDayId"])(

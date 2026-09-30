@@ -184,7 +184,8 @@ function toolName(call: unknown): string {
   if (
     call.name === "LOG_FOOD" ||
     call.name === "UPDATE_FOOD_QUANTITY" ||
-    call.name === "REMOVE_FOOD"
+    call.name === "REMOVE_FOOD" ||
+    call.name === "CHANGE_FOOD_STATUS"
   ) {
     return call.name;
   }
@@ -198,6 +199,14 @@ function projectedTool(call: ReturnType<typeof parseFoodDayToolCall>) {
       name: call.name,
       entryId: call.arguments.entryId,
       expectedRevision: call.arguments.expectedRevision,
+    };
+  }
+  if (call.name === "CHANGE_FOOD_STATUS") {
+    return {
+      name: call.name,
+      entryId: call.arguments.entryId,
+      expectedRevision: call.arguments.expectedRevision,
+      status: call.arguments.status,
     };
   }
   return {

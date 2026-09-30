@@ -197,13 +197,18 @@ describe("OpenAI FoodDay decision binding", () => {
     expect(requestAt(create).input).not.toContain("do-not-send");
   });
 
-  it("offers exactly three functions with auto selection and disables response storage", async () => {
+  it("offers exactly four functions with auto selection and disables response storage", async () => {
     const { create, model } = setup();
     await model.decide(decisionInput("Hello"));
     const request = requestAt(create);
     expect(
       (request.tools as { name: string }[]).map((tool) => tool.name),
-    ).toEqual(["LOG_FOOD", "UPDATE_FOOD_QUANTITY", "REMOVE_FOOD"]);
+    ).toEqual([
+      "LOG_FOOD",
+      "UPDATE_FOOD_QUANTITY",
+      "REMOVE_FOOD",
+      "CHANGE_FOOD_STATUS",
+    ]);
     expect(request.tool_choice).toBe("auto");
     expect(request.store).toBe(false);
   });
@@ -231,7 +236,12 @@ describe("OpenAI FoodDay decision binding", () => {
     });
   });
 
-  it.each(["LOG_FOOD", "UPDATE_FOOD_QUANTITY", "REMOVE_FOOD"] as const)(
+  it.each([
+    "LOG_FOOD",
+    "UPDATE_FOOD_QUANTITY",
+    "REMOVE_FOOD",
+    "CHANGE_FOOD_STATUS",
+  ] as const)(
     "maps provider %s into an untrusted M4B1-compatible call",
     async (name) => {
       const args =
@@ -254,7 +264,13 @@ describe("OpenAI FoodDay decision binding", () => {
                 quantity: { amount: "2", unit: "SERVING" },
                 overrideAction: { type: "PRESERVE" },
               }
-            : { entryId: state.entries[0]?.id, expectedRevision: 1 };
+            : name === "REMOVE_FOOD"
+              ? { entryId: state.entries[0]?.id, expectedRevision: 1 }
+              : {
+                  entryId: state.entries[0]?.id,
+                  expectedRevision: 1,
+                  status: "PLANNED",
+                };
       const { model } = setup(response("", [functionCall(name, args)]));
       const decision = await model.decide(decisionInput("Change"));
       expect(decision).toEqual({
@@ -284,6 +300,15 @@ describe("OpenAI FoodDay decision binding", () => {
         },
         "call_2",
       ),
+      functionCall(
+        "CHANGE_FOOD_STATUS",
+        {
+          entryId: state.entries[0]?.id,
+          expectedRevision: 1,
+          status: "PLANNED",
+        },
+        "call_3",
+      ),
     ];
     const { model } = setup(response("", calls));
     const decision = await model.decide(decisionInput("Change"));
@@ -291,7 +316,7 @@ describe("OpenAI FoodDay decision binding", () => {
     if (decision.type === "TOOLS") {
       expect(
         decision.calls.map((call) => (call as { name: string }).name),
-      ).toEqual(["REMOVE_FOOD", "UPDATE_FOOD_QUANTITY"]);
+      ).toEqual(["REMOVE_FOOD", "UPDATE_FOOD_QUANTITY", "CHANGE_FOOD_STATUS"]);
     }
   });
 

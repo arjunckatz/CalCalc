@@ -235,6 +235,10 @@ unchanged. This suite is not a deployment, load test, or RLS test.
 
 ### Authenticated FoodDay conversational turn
 
+The model-facing tool set includes `CHANGE_FOOD_STATUS`, which can transition an
+existing FoodEntry among the canonical statuses. Natural-language status
+selection has not yet been live-evaluated.
+
 `POST /v1/food-days/:foodDayId/turns` requires verified Bearer identity, one
 valid `Idempotency-Key`, a UUID-shaped FoodDay ID, and the strict body
 `{ "message": string }`. Whitespace-only messages and unknown fields are

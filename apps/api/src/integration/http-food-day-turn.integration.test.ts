@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { createFoodDay } from "@cal-calc/domain";
-import { PostgresFoodDayRepository } from "@cal-calc/persistence";
+import { createFoodDay, createFoodEntry } from "@cal-calc/domain";
+import {
+  PostgresFoodDayRepository,
+  PostgresFoodEntryRepository,
+} from "@cal-calc/persistence";
 import { createClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -10,6 +13,7 @@ import {
   createFoodDayTurnRunner,
   createPostgresRuntime,
   createSupabaseAccessTokenVerifier,
+  getFoodDayState,
   type FoodDayTurnModel,
 } from "../index.js";
 
@@ -24,6 +28,8 @@ const createdUserIds: string[] = [];
 const foodDayId = randomUUID();
 const finalMessage = "  I ate yogurt.  ";
 const logMessage = "Make that 200 g.";
+const statusMessage = "Confirm the planned entry.";
+const plannedEntryId = randomUUID();
 
 interface Account {
   readonly id: string;
@@ -35,6 +41,21 @@ let account: Account;
 const decide = vi.fn<FoodDayTurnModel["decide"]>(async (input) => {
   if (input.userMessage === finalMessage) {
     return { type: "FINAL", text: "How much yogurt did you have?" };
+  }
+  if (input.userMessage === statusMessage) {
+    return {
+      type: "TOOLS",
+      calls: [
+        {
+          name: "CHANGE_FOOD_STATUS",
+          arguments: {
+            entryId: plannedEntryId,
+            expectedRevision: 1,
+            status: "CONFIRMED_CONSUMED",
+          },
+        },
+      ],
+    };
   }
   if (input.userMessage !== logMessage) {
     throw new Error("Unexpected integration model message.");
@@ -60,8 +81,12 @@ const decide = vi.fn<FoodDayTurnModel["decide"]>(async (input) => {
   };
 });
 
-const finalize = vi.fn<FoodDayTurnModel["finalize"]>(async () =>
-  Promise.resolve("Logged 200 g of yogurt."),
+const finalize = vi.fn<FoodDayTurnModel["finalize"]>(async (input) =>
+  Promise.resolve(
+    input.toolResults[0]?.name === "CHANGE_FOOD_STATUS"
+      ? "Confirmed the planned entry."
+      : "Logged 200 g of yogurt.",
+  ),
 );
 const model: FoodDayTurnModel = { decide, finalize };
 const app = createApiApp({
@@ -299,6 +324,116 @@ describe.sequential(
       expect(await completedTurnRows()).toEqual(turnsBeforeConflict);
       expect(decide).toHaveBeenCalledTimes(2);
       expect(finalize).toHaveBeenCalledTimes(1);
+    });
+
+    it("applies CHANGE_FOOD_STATUS through the real ledger and durably replays the turn", async () => {
+      const entries = new PostgresFoodEntryRepository(runtime.pool);
+      await entries.create({
+        userId: account.id,
+        entry: createFoodEntry({
+          id: plannedEntryId,
+          foodDayId,
+          rawUserDescription: "Planned toast",
+          displayName: "Toast",
+          quantity: { amount: "1", unit: "SERVING" },
+          nutritionBasis: {
+            amount: "1",
+            unit: "SERVING",
+            nutrition: { calories: "250" },
+          },
+          evidenceClass: "EXACT",
+          status: "PLANNED",
+        }),
+      });
+      const key = randomUUID();
+      const first = await turn(statusMessage, key);
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toEqual({
+        response: "Confirmed the planned entry.",
+      });
+      const finalInput = finalize.mock.calls.at(-1)?.[0];
+      expect(finalInput?.toolResults).toEqual([
+        {
+          name: "CHANGE_FOOD_STATUS",
+          result: {
+            disposition: "APPLIED",
+            entry: expect.objectContaining({
+              id: plannedEntryId,
+              foodDayId,
+              status: "CONFIRMED_CONSUMED",
+              revision: 2,
+            }),
+            appliedRevision: 2,
+          },
+        },
+      ]);
+      const stored = await runtime.pool.query(
+        `select id, user_id, food_day_id, status, revision, last_operation_id
+         from public.food_entries where id = $1`,
+        [plannedEntryId],
+      );
+      expect(stored.rows).toEqual([
+        {
+          id: plannedEntryId,
+          user_id: account.id,
+          food_day_id: foodDayId,
+          status: "CONFIRMED_CONSUMED",
+          revision: 2,
+          last_operation_id: expect.any(String),
+        },
+      ]);
+      expect(await operationRows()).toContainEqual(
+        expect.objectContaining({
+          id: stored.rows[0]?.last_operation_id,
+          status: "SUCCEEDED",
+          result: {
+            kind: "FOOD_ENTRY_UPDATED",
+            entryId: plannedEntryId,
+            appliedRevision: 2,
+          },
+        }),
+      );
+      const revisions = await runtime.pool.query(
+        `select revision, operation_id from public.food_entry_revisions
+         where user_id = $1 and food_entry_id = $2 order by revision`,
+        [account.id, plannedEntryId],
+      );
+      expect(revisions.rows).toEqual([
+        { revision: 1, operation_id: null },
+        { revision: 2, operation_id: stored.rows[0]?.last_operation_id },
+      ]);
+      const totals = await getFoodDayState(
+        {
+          foodDays: new PostgresFoodDayRepository(runtime.pool),
+          foodEntries: entries,
+        },
+        { trustedUserId: account.id, foodDayId },
+      );
+      expect(totals.totals.confirmed).toEqual({
+        calories: "370",
+        protein: null,
+        hasUnknownProtein: true,
+      });
+      const beforeRetry = {
+        ledger: await ledgerCounts(),
+        operations: await operationRows(),
+        turns: await completedTurnRows(),
+      };
+      const callsBeforeRetry = {
+        decide: decide.mock.calls.length,
+        finalize: finalize.mock.calls.length,
+      };
+      const retry = await turn(statusMessage, key);
+      expect(retry.statusCode).toBe(200);
+      expect(retry.json()).toEqual(first.json());
+      expect(decide).toHaveBeenCalledTimes(callsBeforeRetry.decide);
+      expect(finalize).toHaveBeenCalledTimes(callsBeforeRetry.finalize);
+      expect(await ledgerCounts()).toEqual(beforeRetry.ledger);
+      expect(await operationRows()).toEqual(beforeRetry.operations);
+      expect(await completedTurnRows()).toEqual(beforeRetry.turns);
+      expect(
+        (await entries.findById(account.id, plannedEntryId))?.entry.revision,
+      ).toBe(2);
     });
   },
 );
