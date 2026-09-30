@@ -4,7 +4,8 @@ export type MutationAction =
   | "CREATE_FOOD_DAY"
   | "CREATE_FOOD_ENTRY"
   | "UPDATE_FOOD_ENTRY"
-  | "REMOVE_FOOD_ENTRY";
+  | "REMOVE_FOOD_ENTRY"
+  | "CHANGE_FOOD_ENTRY_STATUS";
 
 export type MutationOperationScope = "FOOD_DAY_TURN_TOOL";
 
@@ -80,7 +81,8 @@ export function deriveMutationIdentity(
     action !== "CREATE_FOOD_DAY" &&
     action !== "CREATE_FOOD_ENTRY" &&
     action !== "UPDATE_FOOD_ENTRY" &&
-    action !== "REMOVE_FOOD_ENTRY"
+    action !== "REMOVE_FOOD_ENTRY" &&
+    action !== "CHANGE_FOOD_ENTRY_STATUS"
   ) {
     throw new MutationIdentityError("INVALID_ACTION");
   }

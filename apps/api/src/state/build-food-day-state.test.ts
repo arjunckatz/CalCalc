@@ -1,4 +1,5 @@
 import {
+  changeFoodEntryStatus,
   createFoodDay,
   createFoodEntry,
   type FoodEntry,
@@ -144,6 +145,36 @@ describe("buildFoodDayState", () => {
       protein: null,
       hasUnknownProtein: true,
     });
+  });
+
+  it("recomputes confirmed totals after a status leaves and re-enters consumption", () => {
+    const original = entry("entry-1", "CONFIRMED_CONSUMED", "400");
+    expect(build([original]).totals.confirmed).toEqual({
+      calories: "400",
+      protein: null,
+      hasUnknownProtein: true,
+    });
+    const planned = changeFoodEntryStatus(original, {
+      expectedRevision: 1,
+      status: "PLANNED",
+    });
+    if (!planned.ok) throw new Error("Unexpected fixture conflict.");
+    expect(build([planned.value]).totals.confirmed).toEqual({
+      calories: "0",
+      protein: "0",
+      hasUnknownProtein: false,
+    });
+    const confirmed = changeFoodEntryStatus(planned.value, {
+      expectedRevision: 2,
+      status: "CONFIRMED_CONSUMED",
+    });
+    if (!confirmed.ok) throw new Error("Unexpected fixture conflict.");
+    expect(build([confirmed.value]).totals.confirmed).toEqual({
+      calories: "400",
+      protein: null,
+      hasUnknownProtein: true,
+    });
+    expect(confirmed.value.revision).toBe(3);
   });
 
   it("does not expose advisory, projected, scenario, or remaining-total fields", () => {

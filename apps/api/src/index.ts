@@ -114,6 +114,12 @@ export {
   type RemoveFoodEntryMutationResult,
 } from "./mutations/remove-food-entry.js";
 export {
+  changeFoodEntryStatusMutation,
+  type ChangeFoodEntryStatusCommand,
+  type ChangeFoodEntryStatusMutationInput,
+  type ChangeFoodEntryStatusMutationResult,
+} from "./mutations/change-food-entry-status.js";
+export {
   deriveMutationIdentity,
   parseIdempotencyKey,
   MutationIdentityError,
