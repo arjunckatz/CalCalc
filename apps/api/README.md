@@ -300,6 +300,16 @@ OpenAI Responses requests against synthetic canonical STATE and recent transcrip
 It requires no database and is excluded from normal API tests and CI. A passing
 run establishes only these fixtures, not general conversational reliability.
 
+The separate opt-in FoodEntry status-semantic eval uses the real OpenAI API with
+`OPENAI_API_KEY` and `OPENAI_MODEL` set locally:
+`corepack pnpm --filter @cal-calc/api eval:openai:food-day-status-semantics`.
+It is excluded from normal tests, needs no database, and makes at most four
+provider requests. Its four scenarios evaluate a genuine plan, actual
+consumption, non-consumption, and an explicit hypothetical for existing entries.
+An owner-run live eval passed all four fixtures (4/4). This establishes only
+these synthetic existing-entry cases, not general status-language reliability
+or new-entry planning behavior.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`
