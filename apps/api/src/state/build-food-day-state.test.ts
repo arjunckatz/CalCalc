@@ -147,6 +147,35 @@ describe("buildFoodDayState", () => {
     });
   });
 
+  it("new non-confirmed entries do not contaminate confirmed totals or unknown protein", () => {
+    const state = build([
+      entry("entry-1", "CONFIRMED_CONSUMED", "400", "20"),
+      entry("entry-2", "PLANNED", "300"),
+      entry("entry-3", "CONSIDERED", "250"),
+      entry("entry-4", "DISCARDED", "200"),
+    ]);
+    expect(
+      state.entries.map(({ status, revision }) => ({ status, revision })),
+    ).toEqual([
+      { status: "CONFIRMED_CONSUMED", revision: 1 },
+      { status: "PLANNED", revision: 1 },
+      { status: "CONSIDERED", revision: 1 },
+      { status: "DISCARDED", revision: 1 },
+    ]);
+    expect(state.totals.confirmed).toEqual({
+      calories: "400",
+      protein: "20",
+      hasUnknownProtein: false,
+    });
+    expect(
+      build([entry("entry-1", "CONFIRMED_CONSUMED", "400")]).totals.confirmed,
+    ).toEqual({
+      calories: "400",
+      protein: null,
+      hasUnknownProtein: true,
+    });
+  });
+
   it("recomputes confirmed totals after a status leaves and re-enters consumption", () => {
     const original = entry("entry-1", "CONFIRMED_CONSUMED", "400");
     expect(build([original]).totals.confirmed).toEqual({

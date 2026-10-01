@@ -5,6 +5,7 @@ import {
   DomainValidationError,
   type EvidenceClass,
   type FoodEntry,
+  type FoodEntryStatus,
   type NutritionBasis,
   type Quantity,
 } from "@cal-calc/domain";
@@ -26,6 +27,8 @@ export interface CreateFoodEntryCommand {
   readonly quantity: Quantity;
   readonly nutritionBasis: NutritionBasis;
   readonly evidenceClass: EvidenceClass;
+  /** Omission preserves the existing confirmed-consumed create contract. */
+  readonly status?: FoodEntryStatus;
 }
 
 export interface CreateFoodEntryMutationInput {
@@ -55,6 +58,7 @@ export async function createFoodEntryMutation(
     "quantity",
     "nutritionBasis",
     "evidenceClass",
+    "status",
   ]);
   checkFields(command.quantity, ["amount", "unit"]);
   checkFields(command.nutritionBasis, ["amount", "unit", "nutrition"]);
@@ -74,7 +78,8 @@ export async function createFoodEntryMutation(
     quantity: command.quantity,
     nutritionBasis: command.nutritionBasis,
     evidenceClass: command.evidenceClass,
-    status: "CONFIRMED_CONSUMED",
+    status:
+      command.status === undefined ? "CONFIRMED_CONSUMED" : command.status,
   });
   const identity = deriveMutationIdentity({
     trustedUserId: input.trustedUserId,

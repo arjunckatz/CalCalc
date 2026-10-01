@@ -1,3 +1,4 @@
+import { foodEntryStatuses } from "@cal-calc/domain";
 import {
   createFoodEntryExactlyOnce,
   SemanticOperationIdempotencyConflictError,
@@ -165,6 +166,68 @@ describe("createFoodEntryMutation", () => {
     expect(replay).toEqual({ disposition: "REPLAYED", entry: first.entry });
   });
 
+  it.each(foodEntryStatuses)(
+    "creates canonical %s status at revision 1",
+    async (status) => {
+      const result = await run({ ...command, status });
+      const sent = workflow.mock.calls[0]![1];
+      expect(sent.entry.status).toBe(status);
+      expect(sent.entry.revision).toBe(1);
+      expect(result.entry.status).toBe(status);
+      expect(result.entry.nutritionBasis).toEqual(sent.entry.nutritionBasis);
+      expect(result.entry.evidenceClass).toBe("SOURCED");
+    },
+  );
+
+  it("preserves the established confirmed-create identity for omitted and explicit status", async () => {
+    await run();
+    await run({ ...command, status: "CONFIRMED_CONSUMED" });
+    const omitted = workflow.mock.calls[0]![1];
+    const explicit = workflow.mock.calls[1]![1];
+    expect(explicit.operationKey).toBe(omitted.operationKey);
+    expect(explicit.requestFingerprint).toBe(omitted.requestFingerprint);
+  });
+
+  it("uses the same operation key but a different fingerprint when status changes", async () => {
+    await run();
+    const first = workflow.mock.calls[0]![1];
+    const conflict = new SemanticOperationIdempotencyConflictError(
+      first.operationKey,
+      first.requestFingerprint,
+      "changed",
+    );
+    workflow.mockRejectedValueOnce(conflict);
+    await expect(run({ ...command, status: "PLANNED" })).rejects.toBe(conflict);
+    const changed = workflow.mock.calls[1]![1];
+    expect(changed.entry.status).toBe("PLANNED");
+    expect(changed.operationKey).toBe(first.operationKey);
+    expect(changed.requestFingerprint).not.toBe(first.requestFingerprint);
+  });
+
+  it("normalizes equivalent planned creation commands before fingerprinting", async () => {
+    await run({ ...command, status: "PLANNED" });
+    await run({
+      ...command,
+      status: "PLANNED",
+      rawUserDescription: "Had lunch",
+      displayName: "Lunch",
+      quantity: { amount: "1", unit: "SERVING" },
+      nutritionBasis: {
+        amount: "1",
+        unit: "SERVING",
+        nutrition: {
+          calories: "685.1075",
+          protein: "41.0025",
+          carbs: "249.13",
+          fat: "0.1",
+        },
+      },
+    });
+    expect(workflow.mock.calls[1]![1].requestFingerprint).toBe(
+      workflow.mock.calls[0]![1].requestFingerprint,
+    );
+  });
+
   it("uses the trusted agent operation scope while retaining FoodDay in its fingerprint", async () => {
     await createFoodEntryMutation(
       { transactionRunner: runner },
@@ -255,7 +318,6 @@ describe("createFoodEntryMutation", () => {
     "revision",
     "userId",
     "ownerId",
-    "status",
     "workingNutrition",
     "createdAt",
   ])("rejects caller command field %s before persistence", async (field) => {
@@ -306,6 +368,8 @@ describe("createFoodEntryMutation", () => {
       },
     },
     { ...command, evidenceClass: "INVENTED" },
+    { ...command, status: "INVENTED" },
+    { ...command, status: null },
     { ...command, displayName: " " },
   ])("rejects invalid domain inputs before persistence (%#)", async (value) => {
     await expect(run(value as CreateFoodEntryCommand)).rejects.toThrow();
