@@ -310,6 +310,15 @@ An owner-run live eval passed all four fixtures (4/4). This establishes only
 these synthetic existing-entry cases, not general status-language reliability
 or new-entry planning behavior.
 
+The separate opt-in new-entry semantic eval uses the real OpenAI API and requires
+`OPENAI_API_KEY` and `OPENAI_MODEL`. Run
+`corepack pnpm --filter @cal-calc/api eval:openai:food-day-new-entry-semantics`
+to evaluate four focused cases: a genuine new plan, actual new consumption, an
+explicit hypothetical, and a casual possibility. It is excluded from normal
+tests and CI, requires no database, and makes at most four paid decision calls.
+An owner-run live eval passed all four fixtures (4/4). This establishes only
+these synthetic new-entry cases, not general new-entry language reliability.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`
