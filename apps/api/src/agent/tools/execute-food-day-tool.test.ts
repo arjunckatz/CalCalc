@@ -131,6 +131,40 @@ describe("executeFoodDayTool", () => {
     expect(removeMutation).not.toHaveBeenCalled();
   });
 
+  it("passes PLANNED through the existing create mutation and returns authoritative status and revision", async () => {
+    const planned = { ...entry, status: "PLANNED" as const };
+    const authoritative = { disposition: "CREATED" as const, entry: planned };
+    createMutation.mockResolvedValueOnce(authoritative);
+    const output = await executeFoodDayTool(dependencies, trustedContext, {
+      ...logCall,
+      arguments: { ...logCall.arguments, status: "PLANNED" },
+    });
+    expect(createMutation).toHaveBeenCalledExactlyOnceWith(dependencies, {
+      trustedUserId: trustedContext.trustedUserId,
+      idempotencyKey: trustedContext.idempotencyKey,
+      operationScope: "FOOD_DAY_TURN_TOOL",
+      command: {
+        foodDayId: trustedContext.foodDayId,
+        rawUserDescription: "Lunch",
+        displayName: "Lunch",
+        quantity: { amount: "1", unit: "SERVING" },
+        nutritionBasis: {
+          amount: "1",
+          unit: "SERVING",
+          nutrition: { calories: "685.1075", protein: "41.0025" },
+        },
+        evidenceClass: "EXACT",
+        status: "PLANNED",
+      },
+    });
+    expect(output).toEqual({ name: "LOG_FOOD", result: authoritative });
+    expect(output.result.entry).toMatchObject({
+      id: entry.id,
+      status: "PLANNED",
+      revision: 1,
+    });
+  });
+
   it("delegates quantity correction with trusted day scope and validated override", async () => {
     const authoritative = {
       disposition: "APPLIED" as const,

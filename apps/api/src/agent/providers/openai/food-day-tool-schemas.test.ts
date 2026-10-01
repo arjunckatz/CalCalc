@@ -2,6 +2,7 @@ import { foodEntryStatuses } from "@cal-calc/domain";
 import { describe, expect, it } from "vitest";
 
 import {
+  logFoodCreationStatuses,
   parseFoodDayToolCall,
   ToolValidationError,
 } from "../../tools/food-day-tools.js";
@@ -63,6 +64,7 @@ function logArguments() {
       },
     },
     evidenceClass: "ESTIMATED",
+    status: "CONFIRMED_CONSUMED",
   };
 }
 
@@ -108,7 +110,13 @@ describe("OpenAI FoodDay function tools", () => {
       "quantity",
       "nutritionBasis",
       "evidenceClass",
+      "status",
     ]);
+    expect(asSchema(propertiesOf(log).status)).toEqual({
+      type: "string",
+      enum: ["CONFIRMED_CONSUMED", "PLANNED"],
+    });
+    expect(logFoodCreationStatuses).toEqual(["CONFIRMED_CONSUMED", "PLANNED"]);
     const basis = asSchema(propertiesOf(log).nutritionBasis);
     expect(Object.keys(propertiesOf(basis))).toEqual([
       "amount",

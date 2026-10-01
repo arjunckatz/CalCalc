@@ -1,7 +1,11 @@
 import { foodEntryStatuses } from "@cal-calc/domain";
 import { describe, expect, it } from "vitest";
 
-import { parseFoodDayToolCall, ToolValidationError } from "./food-day-tools.js";
+import {
+  logFoodCreationStatuses,
+  parseFoodDayToolCall,
+  ToolValidationError,
+} from "./food-day-tools.js";
 
 const entryId = "123e4567-e89b-12d3-a456-426614174000";
 
@@ -75,6 +79,37 @@ describe("parseFoodDayToolCall", () => {
     });
   });
 
+  it.each(logFoodCreationStatuses)(
+    "accepts explicit LOG_FOOD creation status %s",
+    (status) => {
+      const call = logCall();
+      expect(
+        parseFoodDayToolCall({
+          ...call,
+          arguments: { ...call.arguments, status },
+        }),
+      ).toMatchObject({ arguments: { status } });
+    },
+  );
+
+  it.each([
+    "CONSIDERED",
+    "DISCARDED",
+    "planned",
+    "UNKNOWN",
+    null,
+    1,
+    undefined,
+  ])("rejects LOG_FOOD creation status %s", (status) => {
+    const call = logCall();
+    expect(() =>
+      parseFoodDayToolCall({
+        ...call,
+        arguments: { ...call.arguments, status },
+      }),
+    ).toThrow(ToolValidationError);
+  });
+
   it.each(["BOGUS", "CREATE_FOOD_ENTRY", "getFoodDayState"])(
     "rejects unknown tool name %s",
     (name) => {
@@ -97,7 +132,7 @@ describe("parseFoodDayToolCall", () => {
     ).toThrow(ToolValidationError);
   });
 
-  it.each(["trustedUserId", "foodDayId", "idempotencyKey", "status"])(
+  it.each(["trustedUserId", "foodDayId", "idempotencyKey"])(
     "rejects trusted or internal LOG_FOOD argument %s",
     (field) => {
       const call = logCall();

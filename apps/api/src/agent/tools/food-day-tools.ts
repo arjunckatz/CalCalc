@@ -6,6 +6,7 @@ import {
   parseNutritionBasis,
   parseNutritionOverride,
   parseQuantity,
+  type FoodEntryStatus,
   type QuantityOverrideAction,
 } from "@cal-calc/domain";
 
@@ -14,10 +15,20 @@ import type { ChangeFoodEntryStatusCommand } from "../../mutations/change-food-e
 import type { RemoveFoodEntryCommand } from "../../mutations/remove-food-entry.js";
 import type { UpdateFoodEntryCommand } from "../../mutations/update-food-entry.js";
 
+export const logFoodCreationStatuses = [
+  "CONFIRMED_CONSUMED",
+  "PLANNED",
+] as const satisfies readonly FoodEntryStatus[];
+
 export type FoodDayToolCall =
   | {
       readonly name: "LOG_FOOD";
-      readonly arguments: Omit<CreateFoodEntryCommand, "foodDayId">;
+      readonly arguments: Omit<
+        CreateFoodEntryCommand,
+        "foodDayId" | "status"
+      > & {
+        readonly status?: (typeof logFoodCreationStatuses)[number];
+      };
     }
   | {
       readonly name: "UPDATE_FOOD_QUANTITY";
@@ -87,6 +98,7 @@ function parseLogArguments(
     "quantity",
     "nutritionBasis",
     "evidenceClass",
+    "status",
   ]);
   const quantity = parseQuantityInput(value.quantity);
   const basis = strictObject(value.nutritionBasis, [
@@ -102,6 +114,12 @@ function parseLogArguments(
     if (Object.hasOwn(nutrition, field)) decimalText(nutrition[field]);
   }
   requireMember(value.evidenceClass, evidenceClasses);
+  const status = value.status;
+  if (status === undefined) {
+    if (Object.hasOwn(value, "status")) throw new ToolValidationError();
+  } else {
+    requireMember(status, logFoodCreationStatuses);
+  }
   const rawUserDescription = text(value.rawUserDescription);
   const displayName = text(value.displayName);
   return {
@@ -116,6 +134,7 @@ function parseLogArguments(
       }),
     ),
     evidenceClass: value.evidenceClass,
+    ...(status === undefined ? {} : { status }),
   };
 }
 

@@ -5,6 +5,8 @@ import {
 } from "@cal-calc/domain";
 import type { FunctionTool } from "openai/resources/responses/responses.js";
 
+import { logFoodCreationStatuses } from "../../tools/food-day-tools.js";
+
 const optionalLogNutrients = [
   "protein",
   "carbs",
@@ -57,7 +59,8 @@ export const openAIFoodDayTools: FunctionTool[] = [
   {
     type: "function",
     name: "LOG_FOOD",
-    description: "Record food the user consumed on the current FoodDay.",
+    description:
+      "Create a new FoodEntry on the current FoodDay as CONFIRMED_CONSUMED or PLANNED.",
     strict: true,
     parameters: strictObject({
       rawUserDescription: { type: "string" },
@@ -69,6 +72,7 @@ export const openAIFoodDayTools: FunctionTool[] = [
         nutrition: logNutrition,
       }),
       evidenceClass: { type: "string", enum: evidenceClasses },
+      status: { type: "string", enum: logFoodCreationStatuses },
     }),
   },
   {
