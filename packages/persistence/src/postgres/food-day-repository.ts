@@ -1,10 +1,11 @@
 import type { FoodDay } from "@cal-calc/domain";
 
 import { fromFoodDayRow, toFoodDayWriteValues } from "../mapping.js";
-import type {
-  FoodDayCompleteness,
-  FoodDayRow,
-  PersistedFoodDay,
+import {
+  foodDayCompletenessValues,
+  type FoodDayCompleteness,
+  type FoodDayRow,
+  type PersistedFoodDay,
 } from "../types.js";
 import type { PostgresExecutor } from "./food-entry-repository.js";
 
@@ -20,11 +21,26 @@ export interface UpdateFoodDayRecord extends CreateFoodDayRecord {
   readonly closedAt?: string;
 }
 
+export interface SetFoodDayCompletenessRecord {
+  readonly userId: string;
+  readonly foodDayId: string;
+  readonly expectedCompleteness: FoodDayCompleteness;
+  readonly targetCompleteness: FoodDayCompleteness;
+}
+
 export class FoodDayNotFoundError extends Error {
   override readonly name = "FoodDayNotFoundError";
 
   constructor(readonly foodDayId: string) {
     super(`Food day ${foodDayId} was not found for this user.`);
+  }
+}
+
+export class FoodDayCompletenessConflictError extends Error {
+  override readonly name = "FoodDayCompletenessConflictError";
+
+  constructor() {
+    super("Food day completeness changed since this command was prepared.");
   }
 }
 
@@ -121,6 +137,34 @@ export class PostgresFoodDayRepository {
       throw new FoodDayNotFoundError(input.foodDay.id);
     }
     return fromFoodDayRow(parseFoodDayRow(row));
+  }
+
+  /** Atomic expected-value CAS; never rewrites unrelated FoodDay fields. */
+  async setCompleteness(
+    input: SetFoodDayCompletenessRecord,
+  ): Promise<PersistedFoodDay> {
+    const result = await this.executor.query(
+      `update public.food_days
+       set completeness = $4::public.food_day_completeness
+       where id = $1
+         and user_id = $2
+         and completeness = $3::public.food_day_completeness
+       returning ${foodDayResultColumns}`,
+      [
+        input.foodDayId,
+        input.userId,
+        input.expectedCompleteness,
+        input.targetCompleteness,
+      ],
+    );
+    const row = firstRow(result.rows);
+    if (row !== undefined) return fromFoodDayRow(parseFoodDayRow(row));
+
+    // The fallback remains owner-scoped; never inspect another user's value.
+    if ((await this.findById(input.userId, input.foodDayId)) === null) {
+      throw new FoodDayNotFoundError(input.foodDayId);
+    }
+    throw new FoodDayCompletenessConflictError();
   }
 }
 
@@ -219,8 +263,7 @@ function isFoodDayStatus(value: unknown): value is FoodDayRow["status"] {
 
 function isFoodDayCompleteness(value: unknown): value is FoodDayCompleteness {
   return (
-    value === "UNKNOWN" ||
-    value === "PARTIAL" ||
-    value === "USER_DECLARED_COMPLETE"
+    typeof value === "string" &&
+    foodDayCompletenessValues.includes(value as FoodDayCompleteness)
   );
 }

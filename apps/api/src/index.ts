@@ -120,6 +120,12 @@ export {
   type ChangeFoodEntryStatusMutationResult,
 } from "./mutations/change-food-entry-status.js";
 export {
+  setFoodDayCompletenessMutation,
+  type SetFoodDayCompletenessCommand,
+  type SetFoodDayCompletenessMutationInput,
+  type SetFoodDayCompletenessMutationResult,
+} from "./mutations/set-food-day-completeness.js";
+export {
   deriveMutationIdentity,
   parseIdempotencyKey,
   MutationIdentityError,

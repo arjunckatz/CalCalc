@@ -9,8 +9,13 @@ import type {
   NutritionOverride,
 } from "@cal-calc/domain";
 
-export type FoodDayCompleteness =
-  "UNKNOWN" | "PARTIAL" | "USER_DECLARED_COMPLETE";
+export const foodDayCompletenessValues = [
+  "UNKNOWN",
+  "PARTIAL",
+  "USER_DECLARED_COMPLETE",
+] as const;
+
+export type FoodDayCompleteness = (typeof foodDayCompletenessValues)[number];
 
 export type ConsumedTimePrecision = "EXACT" | "APPROXIMATE";
 

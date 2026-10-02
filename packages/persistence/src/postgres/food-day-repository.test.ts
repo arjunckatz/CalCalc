@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { toFoodDayRow } from "../mapping.js";
 import type { FoodDayCompleteness } from "../types.js";
 import {
+  FoodDayCompletenessConflictError,
   FoodDayNotFoundError,
   PostgresFoodDayRepository,
 } from "./food-day-repository.js";
@@ -233,6 +234,72 @@ describe("PostgresFoodDayRepository", () => {
 
     expect(executor.calls).toHaveLength(1);
     expect(executor.calls[0]?.values[1]).toBe(otherUserId);
+  });
+
+  it("compare-and-sets only completeness and returns authoritative unchanged fields", async () => {
+    const foodDay = testFoodDay(firstDayId);
+    const executor = new ScriptedExecutor([
+      [foodDayRow(foodDay, { completeness: "PARTIAL" })],
+    ]);
+    const updated = await new PostgresFoodDayRepository(
+      executor,
+    ).setCompleteness({
+      userId,
+      foodDayId: firstDayId,
+      expectedCompleteness: "UNKNOWN",
+      targetCompleteness: "PARTIAL",
+    });
+
+    expect(updated).toMatchObject({
+      foodDay,
+      userId,
+      completeness: "PARTIAL",
+      localDate,
+      timezone: "Asia/Calcutta",
+    });
+    expect(executor.calls).toHaveLength(1);
+    const sql = normalizeSql(executor.calls[0]?.queryText);
+    expect(sql).toContain(
+      "set completeness = $4::public.food_day_completeness",
+    );
+    expect(sql).toContain(
+      "where id = $1 and user_id = $2 and completeness = $3::public.food_day_completeness",
+    );
+    expect(sql).not.toMatch(/set status|calorie_target =|protein_target =/);
+    expect(executor.calls[0]?.values).toEqual([
+      firstDayId,
+      userId,
+      "UNKNOWN",
+      "PARTIAL",
+    ]);
+  });
+
+  it("distinguishes an owned stale CAS from an unavailable day without unscoped lookup", async () => {
+    const stale = new ScriptedExecutor([
+      [],
+      [foodDayRow(testFoodDay(firstDayId), { completeness: "PARTIAL" })],
+    ]);
+    const missing = new ScriptedExecutor([[], []]);
+    const input = {
+      userId,
+      foodDayId: firstDayId,
+      expectedCompleteness: "UNKNOWN" as const,
+      targetCompleteness: "USER_DECLARED_COMPLETE" as const,
+    };
+
+    await expect(
+      new PostgresFoodDayRepository(stale).setCompleteness(input),
+    ).rejects.toBeInstanceOf(FoodDayCompletenessConflictError);
+    await expect(
+      new PostgresFoodDayRepository(missing).setCompleteness(input),
+    ).rejects.toBeInstanceOf(FoodDayNotFoundError);
+    for (const executor of [stale, missing]) {
+      expect(executor.calls).toHaveLength(2);
+      expect(normalizeSql(executor.calls[1]?.queryText)).toContain(
+        "where id = $1 and user_id = $2",
+      );
+      expect(executor.calls[1]?.values).toEqual([firstDayId, userId]);
+    }
   });
 });
 

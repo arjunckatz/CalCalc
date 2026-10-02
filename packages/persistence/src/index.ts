@@ -20,9 +20,11 @@ export {
   type CreateFoodEntryIntegrityReason,
 } from "./postgres/create-food-entry-exactly-once.js";
 export {
+  FoodDayCompletenessConflictError,
   FoodDayNotFoundError,
   PostgresFoodDayRepository,
   type CreateFoodDayRecord,
+  type SetFoodDayCompletenessRecord,
   type UpdateFoodDayRecord,
 } from "./postgres/food-day-repository.js";
 export {
@@ -47,6 +49,12 @@ export {
   type UpdateFoodEntryRecord,
 } from "./postgres/food-entry-repository.js";
 export {
+  setFoodDayCompletenessExactlyOnce,
+  SetFoodDayCompletenessIntegrityError,
+  type SetFoodDayCompletenessExactlyOnceInput,
+  type SetFoodDayCompletenessExactlyOnceResult,
+} from "./postgres/set-food-day-completeness-exactly-once.js";
+export {
   PostgresSemanticOperationRepository,
   SemanticOperationIdempotencyConflictError,
   SemanticOperationNotFoundError,
@@ -70,6 +78,7 @@ export {
   type ResolveFoodDayTargetInput,
   type ResolveFoodDayTargetResult,
 } from "./resolve-food-day-target.js";
+export { foodDayCompletenessValues } from "./types.js";
 export type {
   ConsumedTimePrecision,
   FoodDayCompleteness,
