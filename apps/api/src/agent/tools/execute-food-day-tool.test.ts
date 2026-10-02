@@ -1,5 +1,6 @@
 import { createFoodEntry, DomainValidationError } from "@cal-calc/domain";
 import {
+  FoodDayCompletenessConflictError,
   SemanticOperationIdempotencyConflictError,
   type PostgresTransactionRunner,
 } from "@cal-calc/persistence";
@@ -10,6 +11,7 @@ import { changeFoodEntryStatusMutation } from "../../mutations/change-food-entry
 import { deriveMutationIdentity } from "../../mutations/mutation-identity.js";
 import { parseIdempotencyKey } from "../../mutations/mutation-identity.js";
 import { removeFoodEntryMutation } from "../../mutations/remove-food-entry.js";
+import { setFoodDayCompletenessMutation } from "../../mutations/set-food-day-completeness.js";
 import { updateFoodEntryMutation } from "../../mutations/update-food-entry.js";
 import { ToolValidationError } from "./food-day-tools.js";
 import { executeFoodDayTool } from "./execute-food-day-tool.js";
@@ -26,15 +28,20 @@ vi.mock("../../mutations/remove-food-entry.js", () => ({
 vi.mock("../../mutations/change-food-entry-status.js", () => ({
   changeFoodEntryStatusMutation: vi.fn(),
 }));
+vi.mock("../../mutations/set-food-day-completeness.js", () => ({
+  setFoodDayCompletenessMutation: vi.fn(),
+}));
 
 const createMutation = vi.mocked(createFoodEntryMutation);
 const updateMutation = vi.mocked(updateFoodEntryMutation);
 const removeMutation = vi.mocked(removeFoodEntryMutation);
 const statusMutation = vi.mocked(changeFoodEntryStatusMutation);
+const completenessMutation = vi.mocked(setFoodDayCompletenessMutation);
 const trustedContext = {
   trustedUserId: "10000000-0000-4000-8000-000000000001",
   foodDayId: "20000000-0000-4000-8000-000000000001",
   idempotencyKey: parseIdempotencyKey("trusted-retry-key"),
+  stateCompleteness: "PARTIAL" as const,
 };
 const runner: PostgresTransactionRunner = {
   async runInTransaction() {
@@ -158,7 +165,7 @@ describe("executeFoodDayTool", () => {
       },
     });
     expect(output).toEqual({ name: "LOG_FOOD", result: authoritative });
-    expect(output.result.entry).toMatchObject({
+    expect(authoritative.entry).toMatchObject({
       id: entry.id,
       status: "PLANNED",
       revision: 1,
@@ -254,6 +261,78 @@ describe("executeFoodDayTool", () => {
     expect(createMutation).not.toHaveBeenCalled();
     expect(updateMutation).not.toHaveBeenCalled();
     expect(removeMutation).not.toHaveBeenCalled();
+  });
+
+  it.each(["PARTIAL", "USER_DECLARED_COMPLETE"] as const)(
+    "delegates completeness target %s with the trusted STATE precondition",
+    async (targetCompleteness) => {
+      const authoritative = {
+        disposition: "APPLIED" as const,
+        foodDayId: trustedContext.foodDayId,
+        completeness: targetCompleteness,
+      };
+      completenessMutation.mockResolvedValueOnce(authoritative);
+      const output = await executeFoodDayTool(dependencies, trustedContext, {
+        name: "SET_FOOD_DAY_COMPLETENESS",
+        arguments: { targetCompleteness },
+      });
+      expect(completenessMutation).toHaveBeenCalledExactlyOnceWith(
+        dependencies,
+        {
+          trustedUserId: trustedContext.trustedUserId,
+          trustedFoodDayId: trustedContext.foodDayId,
+          idempotencyKey: trustedContext.idempotencyKey,
+          operationScope: "FOOD_DAY_TURN_TOOL",
+          command: {
+            expectedCompleteness: "PARTIAL",
+            targetCompleteness,
+          },
+        },
+      );
+      expect(output).toEqual({
+        name: "SET_FOOD_DAY_COMPLETENESS",
+        result: authoritative,
+      });
+      expect(output.result).toBe(authoritative);
+      expect(JSON.parse(JSON.stringify(output))).toEqual(output);
+    },
+  );
+
+  it("rejects model-supplied completeness scope and preconditions before mutation", async () => {
+    for (const field of [
+      "expectedCompleteness",
+      "foodDayId",
+      "trustedUserId",
+      "idempotencyKey",
+      "operationKey",
+    ]) {
+      await expect(
+        executeFoodDayTool(dependencies, trustedContext, {
+          name: "SET_FOOD_DAY_COMPLETENESS",
+          arguments: {
+            targetCompleteness: "USER_DECLARED_COMPLETE",
+            [field]: "attacker",
+          },
+        }),
+      ).rejects.toBeInstanceOf(ToolValidationError);
+    }
+    expect(completenessMutation).not.toHaveBeenCalled();
+  });
+
+  it("propagates completeness stale-CAS and fresh same-value errors", async () => {
+    const call = {
+      name: "SET_FOOD_DAY_COMPLETENESS",
+      arguments: { targetCompleteness: "PARTIAL" },
+    };
+    for (const error of [
+      new FoodDayCompletenessConflictError(),
+      new DomainValidationError("Food day completeness is already requested."),
+    ]) {
+      completenessMutation.mockRejectedValueOnce(error);
+      await expect(
+        executeFoodDayTool(dependencies, trustedContext, call),
+      ).rejects.toBe(error);
+    }
   });
 
   it("passes the same trusted child key on retry and leaves conflict detection to the application mutation", async () => {

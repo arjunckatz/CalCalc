@@ -88,12 +88,13 @@ function updateArguments() {
 }
 
 describe("OpenAI FoodDay function tools", () => {
-  it("exposes exactly four strict function tools", () => {
+  it("exposes exactly five strict function tools", () => {
     expect(openAIFoodDayTools.map((tool) => tool.name)).toEqual([
       "LOG_FOOD",
       "UPDATE_FOOD_QUANTITY",
       "REMOVE_FOOD",
       "CHANGE_FOOD_STATUS",
+      "SET_FOOD_DAY_COMPLETENESS",
     ]);
     for (const tool of openAIFoodDayTools) {
       expect(tool.type).toBe("function");
@@ -183,6 +184,16 @@ describe("OpenAI FoodDay function tools", () => {
     expect(asSchema(propertiesOf(status).status).enum).toEqual(
       foodEntryStatuses,
     );
+
+    const completeness = parametersOf("SET_FOOD_DAY_COMPLETENESS");
+    expect(Object.keys(propertiesOf(completeness))).toEqual([
+      "targetCompleteness",
+    ]);
+    expect(asSchema(propertiesOf(completeness).targetCompleteness)).toEqual({
+      type: "string",
+      enum: ["PARTIAL", "USER_DECLARED_COMPLETE"],
+    });
+    expect(JSON.stringify(completeness)).not.toContain("UNKNOWN");
   });
 
   it("uses the domain unit and evidence enums", () => {
@@ -210,6 +221,7 @@ describe("OpenAI FoodDay function tools", () => {
       "semanticOperationId",
       "resultingRevision",
       "deletedAt",
+      "expectedCompleteness",
     ]) {
       expect(encoded).not.toContain(field);
     }
@@ -326,5 +338,18 @@ describe("OpenAI nullable-nutrient adaptation", () => {
       name: "CHANGE_FOOD_STATUS",
       arguments: args,
     });
+  });
+
+  it("leaves completeness target untouched for the provider-neutral validator", () => {
+    const args = { targetCompleteness: "USER_DECLARED_COMPLETE" };
+    expect(
+      normalizeOpenAIFoodDayToolArguments("SET_FOOD_DAY_COMPLETENESS", args),
+    ).toBe(args);
+    expect(
+      parseFoodDayToolCall({
+        name: "SET_FOOD_DAY_COMPLETENESS",
+        arguments: args,
+      }),
+    ).toEqual({ name: "SET_FOOD_DAY_COMPLETENESS", arguments: args });
   });
 });

@@ -197,7 +197,7 @@ describe("OpenAI FoodDay decision binding", () => {
     expect(requestAt(create).input).not.toContain("do-not-send");
   });
 
-  it("offers exactly four functions with auto selection and disables response storage", async () => {
+  it("offers exactly five functions with auto selection and disables response storage", async () => {
     const { create, model } = setup();
     await model.decide(decisionInput("Hello"));
     const request = requestAt(create);
@@ -208,6 +208,7 @@ describe("OpenAI FoodDay decision binding", () => {
       "UPDATE_FOOD_QUANTITY",
       "REMOVE_FOOD",
       "CHANGE_FOOD_STATUS",
+      "SET_FOOD_DAY_COMPLETENESS",
     ]);
     expect(request.tool_choice).toBe("auto");
     expect(request.store).toBe(false);
@@ -241,6 +242,7 @@ describe("OpenAI FoodDay decision binding", () => {
     "UPDATE_FOOD_QUANTITY",
     "REMOVE_FOOD",
     "CHANGE_FOOD_STATUS",
+    "SET_FOOD_DAY_COMPLETENESS",
   ] as const)(
     "maps provider %s into an untrusted M4B1-compatible call",
     async (name) => {
@@ -266,11 +268,13 @@ describe("OpenAI FoodDay decision binding", () => {
               }
             : name === "REMOVE_FOOD"
               ? { entryId: state.entries[0]?.id, expectedRevision: 1 }
-              : {
-                  entryId: state.entries[0]?.id,
-                  expectedRevision: 1,
-                  status: "PLANNED",
-                };
+              : name === "CHANGE_FOOD_STATUS"
+                ? {
+                    entryId: state.entries[0]?.id,
+                    expectedRevision: 1,
+                    status: "PLANNED",
+                  }
+                : { targetCompleteness: "USER_DECLARED_COMPLETE" };
       const { model } = setup(response("", [functionCall(name, args)]));
       const decision = await model.decide(decisionInput("Change"));
       expect(decision).toEqual({

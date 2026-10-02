@@ -5,7 +5,10 @@ import {
 } from "@cal-calc/domain";
 import type { FunctionTool } from "openai/resources/responses/responses.js";
 
-import { logFoodCreationStatuses } from "../../tools/food-day-tools.js";
+import {
+  logFoodCreationStatuses,
+  modelFoodDayCompletenessTargets,
+} from "../../tools/food-day-tools.js";
 
 const optionalLogNutrients = [
   "protein",
@@ -108,6 +111,19 @@ export const openAIFoodDayTools: FunctionTool[] = [
       status: { type: "string", enum: foodEntryStatuses },
     }),
   },
+  {
+    type: "function",
+    name: "SET_FOOD_DAY_COMPLETENESS",
+    description:
+      "Set the current FoodDay's canonical completeness to PARTIAL or USER_DECLARED_COMPLETE. Completeness is separate from FoodDay status.",
+    strict: true,
+    parameters: strictObject({
+      targetCompleteness: {
+        type: "string",
+        enum: modelFoodDayCompletenessTargets,
+      },
+    }),
+  },
 ];
 
 /**
@@ -116,7 +132,11 @@ export const openAIFoodDayTools: FunctionTool[] = [
  */
 export function normalizeOpenAIFoodDayToolArguments(
   name:
-    "LOG_FOOD" | "UPDATE_FOOD_QUANTITY" | "REMOVE_FOOD" | "CHANGE_FOOD_STATUS",
+    | "LOG_FOOD"
+    | "UPDATE_FOOD_QUANTITY"
+    | "REMOVE_FOOD"
+    | "CHANGE_FOOD_STATUS"
+    | "SET_FOOD_DAY_COMPLETENESS",
   args: unknown,
 ): unknown {
   if (!isPlainDataRecord(args)) return args;

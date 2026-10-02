@@ -431,6 +431,7 @@ describe("runFoodDayTurn trusted tool execution", () => {
       {
         trustedUserId: trustedInput.trustedUserId,
         foodDayId: trustedInput.foodDayId,
+        stateCompleteness: initialState.foodDay.completeness,
         idempotencyKey: deriveFoodDayToolIdempotencyKey(
           trustedInput.turnIdempotencyKey,
           0,
@@ -460,6 +461,26 @@ describe("runFoodDayTurn trusted tool execution", () => {
     const second = toolExecutor.mock.calls[1]?.[1].idempotencyKey;
     expect(first).not.toBe(second);
     expect(parseIdempotencyKey(second)).toBe(second);
+  });
+
+  it("passes the same fresh STATE completeness to every sequential tool slot", async () => {
+    const completenessCall = {
+      name: "SET_FOOD_DAY_COMPLETENESS",
+      arguments: { targetCompleteness: "PARTIAL" },
+    };
+    const { dependencies, decide, finalize } = setup({
+      type: "TOOLS",
+      calls: [logCall, completenessCall],
+    });
+    await runFoodDayTurn(dependencies, trustedInput);
+    expect(stateQuery).toHaveBeenCalledTimes(1);
+    expect(decide.mock.calls[0]?.[0].state).toBe(initialState);
+    expect(
+      toolExecutor.mock.calls.map((call) => call[1].stateCompleteness),
+    ).toEqual(["USER_DECLARED_COMPLETE", "USER_DECLARED_COMPLETE"]);
+    expect(toolExecutor.mock.calls[1]?.[2]).toBe(completenessCall);
+    expect(finalize.mock.calls[0]?.[0].state).toBe(initialState);
+    expect(initialState.foodDay.completeness).toBe("USER_DECLARED_COMPLETE");
   });
 
   it("changes the child key when the trusted root turn key changes", async () => {

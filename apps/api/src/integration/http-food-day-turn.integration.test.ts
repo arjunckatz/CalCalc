@@ -30,6 +30,7 @@ const finalMessage = "  I ate yogurt.  ";
 const logMessage = "Make that 200 g.";
 const plannedMessage = "I plan to have oats later.";
 const statusMessage = "Confirm the planned entry.";
+const completenessMessage = "Mark this FoodDay complete.";
 const plannedEntryId = randomUUID();
 
 interface Account {
@@ -54,6 +55,17 @@ const decide = vi.fn<FoodDayTurnModel["decide"]>(async (input) => {
             expectedRevision: 1,
             status: "CONFIRMED_CONSUMED",
           },
+        },
+      ],
+    };
+  }
+  if (input.userMessage === completenessMessage) {
+    return {
+      type: "TOOLS",
+      calls: [
+        {
+          name: "SET_FOOD_DAY_COMPLETENESS",
+          arguments: { targetCompleteness: "USER_DECLARED_COMPLETE" },
         },
       ],
     };
@@ -108,6 +120,8 @@ const finalize = vi.fn<FoodDayTurnModel["finalize"]>(async (input) => {
   const tool = input.toolResults[0];
   if (tool?.name === "CHANGE_FOOD_STATUS")
     return "Confirmed the planned entry.";
+  if (tool?.name === "SET_FOOD_DAY_COMPLETENESS")
+    return "Marked the FoodDay complete.";
   if (tool?.name === "LOG_FOOD" && tool.result.entry.status === "PLANNED") {
     return "Planned oats.";
   }
@@ -278,7 +292,9 @@ describe.sequential(
           },
         },
       });
-      const entryId = firstFinalization?.toolResults[0]?.result.entry.id;
+      const firstTool = firstFinalization?.toolResults[0];
+      const entryId =
+        firstTool?.name === "LOG_FOOD" ? firstTool.result.entry.id : undefined;
       if (entryId === undefined)
         throw new Error("Expected authoritative entry ID.");
 
@@ -566,6 +582,110 @@ describe.sequential(
       expect(
         (await entries.findById(account.id, plannedEntryId))?.entry.revision,
       ).toBe(2);
+    });
+
+    it("sets completeness from fresh STATE through the authenticated tool path and durably replays", async () => {
+      const repositories = {
+        foodDays: new PostgresFoodDayRepository(runtime.pool),
+        foodEntries: new PostgresFoodEntryRepository(runtime.pool),
+      };
+      const beforeState = await getFoodDayState(repositories, {
+        trustedUserId: account.id,
+        foodDayId,
+      });
+      const beforeDay = await repositories.foodDays.findById(
+        account.id,
+        foodDayId,
+      );
+      const beforeLedger = await ledgerCounts();
+      const beforeOperations = await operationRows();
+      expect(beforeState.foodDay.completeness).toBe("PARTIAL");
+
+      const key = randomUUID();
+      const first = await turn(completenessMessage, key);
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toEqual({
+        response: "Marked the FoodDay complete.",
+      });
+      expect(decide.mock.calls.at(-1)?.[0].state).toEqual(beforeState);
+      expect(await decide.mock.results.at(-1)?.value).toEqual({
+        type: "TOOLS",
+        calls: [
+          {
+            name: "SET_FOOD_DAY_COMPLETENESS",
+            arguments: { targetCompleteness: "USER_DECLARED_COMPLETE" },
+          },
+        ],
+      });
+      const finalInput = finalize.mock.calls.at(-1)?.[0];
+      expect(finalInput?.state).toEqual(beforeState);
+      expect(finalInput?.toolResults).toEqual([
+        {
+          name: "SET_FOOD_DAY_COMPLETENESS",
+          result: {
+            disposition: "APPLIED",
+            foodDayId,
+            completeness: "USER_DECLARED_COMPLETE",
+          },
+        },
+      ]);
+
+      const stored = await runtime.pool.query(
+        "select completeness, status from public.food_days where id = $1 and user_id = $2",
+        [foodDayId, account.id],
+      );
+      expect(stored.rows).toEqual([
+        {
+          completeness: "USER_DECLARED_COMPLETE",
+          status: beforeDay?.foodDay.status,
+        },
+      ]);
+      const afterState = await getFoodDayState(repositories, {
+        trustedUserId: account.id,
+        foodDayId,
+      });
+      expect(afterState.foodDay).toEqual({
+        ...beforeState.foodDay,
+        completeness: "USER_DECLARED_COMPLETE",
+      });
+      expect(afterState.entries).toEqual(beforeState.entries);
+      expect(afterState.totals).toEqual(beforeState.totals);
+      expect(
+        (await repositories.foodDays.findById(account.id, foodDayId))?.foodDay,
+      ).toEqual(beforeDay?.foodDay);
+
+      const afterLedger = await ledgerCounts();
+      expect(afterLedger.entries).toBe(beforeLedger.entries);
+      expect(afterLedger.revisions).toBe(beforeLedger.revisions);
+      expect(Number(afterLedger.operations)).toBe(
+        Number(beforeLedger.operations) + 1,
+      );
+      const afterOperations = await operationRows();
+      expect(afterOperations).toHaveLength(beforeOperations.length + 1);
+      expect(afterOperations).toContainEqual(
+        expect.objectContaining({
+          status: "SUCCEEDED",
+          result: {
+            kind: "FOOD_DAY_COMPLETENESS_SET",
+            foodDayId,
+            completeness: "USER_DECLARED_COMPLETE",
+          },
+        }),
+      );
+      const afterTurns = await completedTurnRows();
+      const callsBeforeRetry = {
+        decide: decide.mock.calls.length,
+        finalize: finalize.mock.calls.length,
+      };
+
+      const replay = await turn(completenessMessage, key);
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toEqual(first.json());
+      expect(decide).toHaveBeenCalledTimes(callsBeforeRetry.decide);
+      expect(finalize).toHaveBeenCalledTimes(callsBeforeRetry.finalize);
+      expect(await ledgerCounts()).toEqual(afterLedger);
+      expect(await operationRows()).toEqual(afterOperations);
+      expect(await completedTurnRows()).toEqual(afterTurns);
     });
   },
 );

@@ -9,11 +9,17 @@ import {
   type FoodEntryStatus,
   type QuantityOverrideAction,
 } from "@cal-calc/domain";
+import type { FoodDayCompleteness } from "@cal-calc/persistence";
 
 import type { CreateFoodEntryCommand } from "../../mutations/create-food-entry.js";
 import type { ChangeFoodEntryStatusCommand } from "../../mutations/change-food-entry-status.js";
 import type { RemoveFoodEntryCommand } from "../../mutations/remove-food-entry.js";
 import type { UpdateFoodEntryCommand } from "../../mutations/update-food-entry.js";
+
+export const modelFoodDayCompletenessTargets = [
+  "PARTIAL",
+  "USER_DECLARED_COMPLETE",
+] as const satisfies readonly FoodDayCompleteness[];
 
 export const logFoodCreationStatuses = [
   "CONFIRMED_CONSUMED",
@@ -41,6 +47,12 @@ export type FoodDayToolCall =
   | {
       readonly name: "CHANGE_FOOD_STATUS";
       readonly arguments: ChangeFoodEntryStatusCommand;
+    }
+  | {
+      readonly name: "SET_FOOD_DAY_COMPLETENESS";
+      readonly arguments: {
+        readonly targetCompleteness: (typeof modelFoodDayCompletenessTargets)[number];
+      };
     };
 
 const nutritionFields = [
@@ -83,6 +95,11 @@ export function parseFoodDayToolCall(input: unknown): FoodDayToolCall {
       return {
         name: "CHANGE_FOOD_STATUS",
         arguments: parseStatusArguments(call.arguments),
+      };
+    case "SET_FOOD_DAY_COMPLETENESS":
+      return {
+        name: "SET_FOOD_DAY_COMPLETENESS",
+        arguments: parseCompletenessArguments(call.arguments),
       };
     default:
       throw new ToolValidationError();
@@ -169,6 +186,17 @@ function parseStatusArguments(input: unknown): ChangeFoodEntryStatusCommand {
     expectedRevision: revision(value.expectedRevision),
     status: value.status,
   };
+}
+
+function parseCompletenessArguments(
+  input: unknown,
+): Extract<
+  FoodDayToolCall,
+  { name: "SET_FOOD_DAY_COMPLETENESS" }
+>["arguments"] {
+  const value = strictObject(input, ["targetCompleteness"]);
+  requireMember(value.targetCompleteness, modelFoodDayCompletenessTargets);
+  return { targetCompleteness: value.targetCompleteness };
 }
 
 function parseQuantityInput(input: unknown) {

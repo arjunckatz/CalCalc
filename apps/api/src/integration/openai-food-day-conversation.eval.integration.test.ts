@@ -209,6 +209,12 @@ function projectedTool(call: ReturnType<typeof parseFoodDayToolCall>) {
       status: call.arguments.status,
     };
   }
+  if (call.name === "SET_FOOD_DAY_COMPLETENESS") {
+    return {
+      name: call.name,
+      targetCompleteness: call.arguments.targetCompleteness,
+    };
+  }
   return {
     name: call.name,
     entryId: call.arguments.entryId,

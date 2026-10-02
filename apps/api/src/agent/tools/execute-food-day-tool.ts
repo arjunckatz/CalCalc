@@ -1,4 +1,7 @@
-import type { PostgresTransactionRunner } from "@cal-calc/persistence";
+import type {
+  FoodDayCompleteness,
+  PostgresTransactionRunner,
+} from "@cal-calc/persistence";
 
 import {
   changeFoodEntryStatusMutation,
@@ -14,6 +17,10 @@ import {
   type RemoveFoodEntryMutationResult,
 } from "../../mutations/remove-food-entry.js";
 import {
+  setFoodDayCompletenessMutation,
+  type SetFoodDayCompletenessMutationResult,
+} from "../../mutations/set-food-day-completeness.js";
+import {
   updateFoodEntryMutation,
   type UpdateFoodEntryMutationResult,
 } from "../../mutations/update-food-entry.js";
@@ -23,6 +30,8 @@ export interface TrustedFoodDayToolContext {
   readonly trustedUserId: string;
   readonly foodDayId: string;
   readonly idempotencyKey: IdempotencyKey;
+  /** Completeness from the fresh canonical STATE shown to the model. */
+  readonly stateCompleteness: FoodDayCompleteness;
 }
 
 export type FoodDayToolResult =
@@ -41,6 +50,10 @@ export type FoodDayToolResult =
   | {
       readonly name: "CHANGE_FOOD_STATUS";
       readonly result: ChangeFoodEntryStatusMutationResult;
+    }
+  | {
+      readonly name: "SET_FOOD_DAY_COMPLETENESS";
+      readonly result: SetFoodDayCompletenessMutationResult;
     };
 
 export async function executeFoodDayTool(
@@ -92,6 +105,20 @@ export async function executeFoodDayTool(
           operationScope: "FOOD_DAY_TURN_TOOL",
           trustedFoodDayId: trustedContext.foodDayId,
           command: call.arguments,
+        }),
+      };
+    case "SET_FOOD_DAY_COMPLETENESS":
+      return {
+        name: call.name,
+        result: await setFoodDayCompletenessMutation(dependencies, {
+          trustedUserId,
+          trustedFoodDayId: trustedContext.foodDayId,
+          idempotencyKey,
+          operationScope: "FOOD_DAY_TURN_TOOL",
+          command: {
+            expectedCompleteness: trustedContext.stateCompleteness,
+            targetCompleteness: call.arguments.targetCompleteness,
+          },
         }),
       };
   }

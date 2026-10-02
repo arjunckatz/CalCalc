@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   logFoodCreationStatuses,
+  modelFoodDayCompletenessTargets,
   parseFoodDayToolCall,
   ToolValidationError,
 } from "./food-day-tools.js";
@@ -329,6 +330,40 @@ describe("parseFoodDayToolCall", () => {
       arguments: { ...statusCall().arguments, status },
     };
     expect(parseFoodDayToolCall(call)).toEqual(call);
+  });
+
+  it.each(modelFoodDayCompletenessTargets)(
+    "accepts completeness target %s without an expected value",
+    (targetCompleteness) => {
+      expect(
+        parseFoodDayToolCall({
+          name: "SET_FOOD_DAY_COMPLETENESS",
+          arguments: { targetCompleteness },
+        }),
+      ).toEqual({
+        name: "SET_FOOD_DAY_COMPLETENESS",
+        arguments: { targetCompleteness },
+      });
+    },
+  );
+
+  it.each([
+    {},
+    { targetCompleteness: "UNKNOWN" },
+    { targetCompleteness: "partial" },
+    { targetCompleteness: "OTHER" },
+    { targetCompleteness: null },
+    { targetCompleteness: 1 },
+    { targetCompleteness: undefined },
+    { targetCompleteness: "PARTIAL", expectedCompleteness: "UNKNOWN" },
+    { targetCompleteness: "PARTIAL", foodDayId: entryId },
+  ])("rejects invalid completeness arguments %#", (argumentsValue) => {
+    expect(() =>
+      parseFoodDayToolCall({
+        name: "SET_FOOD_DAY_COMPLETENESS",
+        arguments: argumentsValue,
+      }),
+    ).toThrow(ToolValidationError);
   });
 
   it.each([
