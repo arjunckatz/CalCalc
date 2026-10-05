@@ -319,6 +319,17 @@ tests and CI, requires no database, and makes at most four paid decision calls.
 An owner-run live eval passed all four fixtures (4/4). This establishes only
 these synthetic new-entry cases, not general new-entry language reliability.
 
+The separate opt-in FoodDay completeness semantic eval uses the real OpenAI API
+and requires `OPENAI_API_KEY` and `OPENAI_MODEL`. Run
+`corepack pnpm --filter @cal-calc/api eval:openai:food-day-completeness-semantics`
+to assess six focused decisions: explicit completion, explicit incompleteness,
+retracting completion, redundant-completion no-op avoidance, ordinary food
+logging without completeness inference, and compound food logging before
+completion. It is excluded from normal tests and CI, requires no database, and
+makes at most six paid decision calls. An owner-run live eval passed all six
+fixtures (6/6). This establishes only these synthetic cases, not general
+completeness-language reliability.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`

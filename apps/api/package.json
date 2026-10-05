@@ -15,7 +15,8 @@
     "smoke:openai:food-day": "vitest run src/integration/openai-food-day-adapter.integration.test.ts",
     "eval:openai:food-day-conversation": "vitest run src/integration/openai-food-day-conversation.eval.integration.test.ts",
     "eval:openai:food-day-status-semantics": "vitest run src/integration/openai-food-day-status-semantics.eval.integration.test.ts --retry 0",
-    "eval:openai:food-day-new-entry-semantics": "vitest run src/integration/openai-food-day-new-entry-semantics.eval.integration.test.ts --retry 0"
+    "eval:openai:food-day-new-entry-semantics": "vitest run src/integration/openai-food-day-new-entry-semantics.eval.integration.test.ts --retry 0",
+    "eval:openai:food-day-completeness-semantics": "vitest run src/integration/openai-food-day-completeness-semantics.eval.integration.test.ts --retry 0"
   },
   "dependencies": {
     "@cal-calc/config": "workspace:*",
