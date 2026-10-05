@@ -56,6 +56,10 @@ const initialState: FoodDayState = {
       hasUnknownProtein: false,
     },
   },
+  targetProgress: {
+    calories: { remainingToTarget: "2400", overTargetBy: "0" },
+    protein: { remainingToTarget: "120", overTargetBy: "0" },
+  },
   entries: [],
 };
 const recentTranscript = [

@@ -6,8 +6,10 @@ export {
 } from "./errors.js";
 export { calculateNutrition } from "./nutrition/calculate.js";
 export {
+  compareDecimals,
   normalizeDecimal,
   roundDecimalForDisplay,
+  subtractDecimals,
   type DecimalString,
 } from "./nutrition/decimal.js";
 export {

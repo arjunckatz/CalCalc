@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { subtractDecimals } from "@cal-calc/domain";
 import { it } from "vitest";
 
 import { createOpenAIFoodDayTurnModel } from "../agent/providers/openai/openai-food-day-turn-model.js";
@@ -33,6 +34,8 @@ function entry(
 }
 
 function state(entries: readonly StateEntry[]): FoodDayState {
+  const confirmedCalories = String(entries.length * 100);
+  const confirmedProtein = String(entries.length * 5);
   return {
     foodDay: {
       id: foodDayId,
@@ -43,9 +46,19 @@ function state(entries: readonly StateEntry[]): FoodDayState {
     },
     totals: {
       confirmed: {
-        calories: String(entries.length * 100),
-        protein: String(entries.length * 5),
+        calories: confirmedCalories,
+        protein: confirmedProtein,
         hasUnknownProtein: false,
+      },
+    },
+    targetProgress: {
+      calories: {
+        remainingToTarget: subtractDecimals("2100", confirmedCalories),
+        overTargetBy: "0",
+      },
+      protein: {
+        remainingToTarget: subtractDecimals("120", confirmedProtein),
+        overTargetBy: "0",
       },
     },
     entries,

@@ -75,9 +75,46 @@ describe("buildFoodDayState", () => {
   });
 
   it.each(["UNKNOWN", "PARTIAL", "USER_DECLARED_COMPLETE"] as const)(
-    "preserves %s completeness without inference",
+    "preserves %s completeness without changing target arithmetic",
     (completeness) => {
-      expect(build([], completeness).foodDay.completeness).toBe(completeness);
+      const state = build(
+        [entry("entry-1", "CONFIRMED_CONSUMED", "400", "20")],
+        completeness,
+      );
+      expect(state.foodDay.completeness).toBe(completeness);
+      expect(state.targetProgress).toEqual({
+        calories: { remainingToTarget: "2000", overTargetBy: "0" },
+        protein: { remainingToTarget: "100", overTargetBy: "0" },
+      });
+    },
+  );
+
+  it.each([
+    {
+      calories: "2000",
+      protein: "100",
+      expectedCalories: { remainingToTarget: "400", overTargetBy: "0" },
+      expectedProtein: { remainingToTarget: "20", overTargetBy: "0" },
+    },
+    {
+      calories: "2400",
+      protein: "120",
+      expectedCalories: { remainingToTarget: "0", overTargetBy: "0" },
+      expectedProtein: { remainingToTarget: "0", overTargetBy: "0" },
+    },
+    {
+      calories: "2400.125",
+      protein: "120.25",
+      expectedCalories: { remainingToTarget: "0", overTargetBy: "0.125" },
+      expectedProtein: { remainingToTarget: "0", overTargetBy: "0.25" },
+    },
+  ])(
+    "projects exact confirmed target progress for $calories calories and $protein protein",
+    ({ calories, protein, expectedCalories, expectedProtein }) => {
+      expect(
+        build([entry("entry-1", "CONFIRMED_CONSUMED", calories, protein)])
+          .targetProgress,
+      ).toEqual({ calories: expectedCalories, protein: expectedProtein });
     },
   );
 
@@ -124,26 +161,34 @@ describe("buildFoodDayState", () => {
   );
 
   it("aggregates multiple confirmed entries with exact decimal arithmetic", () => {
-    const totals = build([
+    const state = build([
       entry("entry-1", "CONFIRMED_CONSUMED", "685.1075", "41.0025"),
       entry("entry-2", "CONFIRMED_CONSUMED", "0.1", "0.1"),
-    ]).totals.confirmed;
-    expect(totals).toEqual({
+    ]);
+    expect(state.totals.confirmed).toEqual({
       calories: "685.2075",
       protein: "41.1025",
       hasUnknownProtein: false,
     });
+    expect(state.targetProgress).toEqual({
+      calories: { remainingToTarget: "1714.7925", overTargetBy: "0" },
+      protein: { remainingToTarget: "78.8975", overTargetBy: "0" },
+    });
   });
 
   it("keeps confirmed protein unknown instead of representing partial protein as total", () => {
-    const totals = build([
+    const state = build([
       entry("entry-1", "CONFIRMED_CONSUMED", "400", "20"),
       entry("entry-2", "CONFIRMED_CONSUMED", "300"),
-    ]).totals.confirmed;
-    expect(totals).toEqual({
+    ]);
+    expect(state.totals.confirmed).toEqual({
       calories: "700",
       protein: null,
       hasUnknownProtein: true,
+    });
+    expect(state.targetProgress).toEqual({
+      calories: { remainingToTarget: "1700", overTargetBy: "0" },
+      protein: { remainingToTarget: null, overTargetBy: null },
     });
   });
 
@@ -166,6 +211,10 @@ describe("buildFoodDayState", () => {
       calories: "400",
       protein: "20",
       hasUnknownProtein: false,
+    });
+    expect(state.targetProgress).toEqual({
+      calories: { remainingToTarget: "2000", overTargetBy: "0" },
+      protein: { remainingToTarget: "100", overTargetBy: "0" },
     });
     expect(
       build([entry("entry-1", "CONFIRMED_CONSUMED", "400")]).totals.confirmed,

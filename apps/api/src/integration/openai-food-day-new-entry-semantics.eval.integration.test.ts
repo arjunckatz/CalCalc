@@ -36,6 +36,10 @@ function emptyState(foodDayId: string): FoodDayState {
         hasUnknownProtein: false,
       },
     },
+    targetProgress: {
+      calories: { remainingToTarget: "2100", overTargetBy: "0" },
+      protein: { remainingToTarget: "120", overTargetBy: "0" },
+    },
     entries: [],
   };
 }

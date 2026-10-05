@@ -50,6 +50,10 @@ function turnResult(response: string): FoodDayTurnResult {
           hasUnknownProtein: false,
         },
       },
+      targetProgress: {
+        calories: { remainingToTarget: "1950", overTargetBy: "0" },
+        protein: { remainingToTarget: "112", overTargetBy: "0" },
+      },
       entries: [],
     },
     toolResults: [],

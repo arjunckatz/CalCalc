@@ -1,4 +1,6 @@
 import {
+  compareDecimals,
+  subtractDecimals,
   summarizeFoodDay,
   type FoodDay,
   type FoodEntry,
@@ -33,6 +35,18 @@ export interface FoodDayState {
       readonly hasUnknownProtein: boolean;
     };
   };
+  /** Exact progress against targets using only confirmed-consumed totals. */
+  readonly targetProgress: {
+    readonly calories: {
+      readonly remainingToTarget: string;
+      readonly overTargetBy: string;
+    };
+    readonly protein: {
+      /** Null when any confirmed entry has unknown protein. */
+      readonly remainingToTarget: string | null;
+      readonly overTargetBy: string | null;
+    };
+  };
   readonly entries: readonly {
     readonly id: string;
     readonly displayName: string;
@@ -49,6 +63,11 @@ export interface FoodDayState {
 export function buildFoodDayState(input: BuildFoodDayStateInput): FoodDayState {
   const { foodDay, entries, completeness, localDate } = input;
   const summary = summarizeFoodDay(foodDay, entries);
+  const confirmed: FoodDayState["totals"]["confirmed"] = {
+    calories: summary.confirmedCalories,
+    protein: summary.hasUnknownProtein ? null : summary.confirmedProtein,
+    hasUnknownProtein: summary.hasUnknownProtein,
+  };
   return {
     foodDay: {
       id: foodDay.id,
@@ -60,12 +79,13 @@ export function buildFoodDayState(input: BuildFoodDayStateInput): FoodDayState {
         protein: foodDay.proteinTarget,
       },
     },
-    totals: {
-      confirmed: {
-        calories: summary.confirmedCalories,
-        protein: summary.hasUnknownProtein ? null : summary.confirmedProtein,
-        hasUnknownProtein: summary.hasUnknownProtein,
-      },
+    totals: { confirmed },
+    targetProgress: {
+      calories: progressForTarget(foodDay.calorieTarget, confirmed.calories),
+      protein:
+        confirmed.protein === null
+          ? { remainingToTarget: null, overTargetBy: null }
+          : progressForTarget(foodDay.proteinTarget, confirmed.protein),
     },
     entries: entries.map((entry) => ({
       id: entry.id,
@@ -78,4 +98,21 @@ export function buildFoodDayState(input: BuildFoodDayStateInput): FoodDayState {
       revision: entry.revision,
     })),
   };
+}
+
+function progressForTarget(target: string, confirmed: string) {
+  const comparison = compareDecimals(confirmed, target);
+  if (comparison < 0) {
+    return {
+      remainingToTarget: subtractDecimals(target, confirmed),
+      overTargetBy: "0",
+    };
+  }
+  if (comparison > 0) {
+    return {
+      remainingToTarget: "0",
+      overTargetBy: subtractDecimals(confirmed, target),
+    };
+  }
+  return { remainingToTarget: "0", overTargetBy: "0" };
 }

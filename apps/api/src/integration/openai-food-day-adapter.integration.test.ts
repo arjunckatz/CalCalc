@@ -18,6 +18,10 @@ const state: FoodDayState = {
   totals: {
     confirmed: { calories: "150", protein: "8", hasUnknownProtein: false },
   },
+  targetProgress: {
+    calories: { remainingToTarget: "1950", overTargetBy: "0" },
+    protein: { remainingToTarget: "112", overTargetBy: "0" },
+  },
   entries: [
     {
       id: "20000000-0000-4000-8000-000000000001",

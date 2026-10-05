@@ -201,6 +201,16 @@ function stateForModel(state: FoodDayState) {
         hasUnknownProtein: state.totals.confirmed.hasUnknownProtein,
       },
     },
+    targetProgress: {
+      calories: {
+        remainingToTarget: state.targetProgress.calories.remainingToTarget,
+        overTargetBy: state.targetProgress.calories.overTargetBy,
+      },
+      protein: {
+        remainingToTarget: state.targetProgress.protein.remainingToTarget,
+        overTargetBy: state.targetProgress.protein.overTargetBy,
+      },
+    },
     entries: state.entries.map((entry) => ({
       id: entry.id,
       displayName: entry.displayName,

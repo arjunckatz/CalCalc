@@ -24,6 +24,10 @@ const state: FoodDayState = {
   totals: {
     confirmed: { calories: "400", protein: "20", hasUnknownProtein: false },
   },
+  targetProgress: {
+    calories: { remainingToTarget: "2000", overTargetBy: "0" },
+    protein: { remainingToTarget: "100", overTargetBy: "0" },
+  },
   entries: [
     {
       id: "30000000-0000-4000-8000-000000000001",
@@ -148,6 +152,10 @@ describe("OpenAI FoodDay decision binding", () => {
     const input = JSON.parse(requestAt(create).input as string);
     expect(input.userMessage).toBe("Add lunch");
     expect(input.state).toEqual(state);
+    expect(input.state.targetProgress).toEqual({
+      calories: { remainingToTarget: "2000", overTargetBy: "0" },
+      protein: { remainingToTarget: "100", overTargetBy: "0" },
+    });
     expect(input.state.entries[0]).toMatchObject({
       id: state.entries[0]?.id,
       revision: 1,
