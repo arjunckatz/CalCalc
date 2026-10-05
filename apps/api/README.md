@@ -330,6 +330,20 @@ makes at most six paid decision calls. An owner-run live eval passed all six
 fixtures (6/6). This establishes only these synthetic cases, not general
 completeness-language reliability.
 
+The dedicated opt-in target-progress semantic eval requires `OPENAI_API_KEY` and
+`OPENAI_MODEL`. Run
+`corepack pnpm --filter @cal-calc/api eval:openai:food-day-target-progress-semantics`
+to examine exactly six cases: incomplete and complete below-target calories,
+incomplete over-target calories, complete exact-target calories, unknown protein,
+and stale pre-mutation progress after food logging. It uses the production OpenAI
+adapter without a database or backend mutation executor, makes at most seven paid
+Responses API calls with retries disabled, and is excluded from normal tests/CI.
+The first owner live run passed A/B/C/E/F (5/6). Scenario D passed a targeted
+one-test rerun after an eval-only assertion repair; its fixture and the production
+prompt were unchanged. All six fixtures have an owner live pass across two runs,
+not one clean 6/6 run. These synthetic cases do not establish general
+target-progress reliability.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`

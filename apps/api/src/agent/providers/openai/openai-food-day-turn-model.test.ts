@@ -152,6 +152,7 @@ describe("OpenAI FoodDay decision binding", () => {
     const input = JSON.parse(requestAt(create).input as string);
     expect(input.userMessage).toBe("Add lunch");
     expect(input.state).toEqual(state);
+    expect(input.state.foodDay.completeness).toBe("USER_DECLARED_COMPLETE");
     expect(input.state.targetProgress).toEqual({
       calories: { remainingToTarget: "2000", overTargetBy: "0" },
       protein: { remainingToTarget: "100", overTargetBy: "0" },
@@ -167,6 +168,35 @@ describe("OpenAI FoodDay decision binding", () => {
     expect(
       (requestAt(create).input as string).includes("[object Object]"),
     ).toBe(false);
+  });
+
+  it("preserves unknown protein progress and incomplete-day context in provider STATE", async () => {
+    const { create, model } = setup();
+    const partialState: FoodDayState = {
+      ...state,
+      foodDay: { ...state.foodDay, completeness: "PARTIAL" },
+      totals: {
+        confirmed: {
+          calories: "400",
+          protein: null,
+          hasUnknownProtein: true,
+        },
+      },
+      targetProgress: {
+        ...state.targetProgress,
+        protein: { remainingToTarget: null, overTargetBy: null },
+      },
+    };
+    await model.decide(
+      decisionInput("How much protein is left?", partialState),
+    );
+    const input = JSON.parse(requestAt(create).input as string);
+    expect(input.state.foodDay.completeness).toBe("PARTIAL");
+    expect(input.state.totals.confirmed.protein).toBeNull();
+    expect(input.state.targetProgress.protein).toEqual({
+      remainingToTarget: null,
+      overTargetBy: null,
+    });
   });
 
   it("represents transcript as ordered user/assistant messages before the exact current user message", async () => {
