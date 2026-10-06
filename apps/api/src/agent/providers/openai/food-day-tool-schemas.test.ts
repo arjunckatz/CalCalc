@@ -88,13 +88,14 @@ function updateArguments() {
 }
 
 describe("OpenAI FoodDay function tools", () => {
-  it("exposes exactly five strict function tools", () => {
+  it("exposes exactly six strict function tools", () => {
     expect(openAIFoodDayTools.map((tool) => tool.name)).toEqual([
       "LOG_FOOD",
       "UPDATE_FOOD_QUANTITY",
       "REMOVE_FOOD",
       "CHANGE_FOOD_STATUS",
       "SET_FOOD_DAY_COMPLETENESS",
+      "LOG_BODY_WEIGHT",
     ]);
     for (const tool of openAIFoodDayTools) {
       expect(tool.type).toBe("function");
@@ -194,6 +195,19 @@ describe("OpenAI FoodDay function tools", () => {
       enum: ["PARTIAL", "USER_DECLARED_COMPLETE"],
     });
     expect(JSON.stringify(completeness)).not.toContain("UNKNOWN");
+
+    const weight = parametersOf("LOG_BODY_WEIGHT");
+    expect(Object.keys(propertiesOf(weight))).toEqual([
+      "localDate",
+      "sourceValue",
+      "sourceUnit",
+    ]);
+    expect(asSchema(propertiesOf(weight).localDate).type).toBe("string");
+    expect(asSchema(propertiesOf(weight).sourceValue).type).toBe("string");
+    expect(asSchema(propertiesOf(weight).sourceUnit).enum).toEqual([
+      "KG",
+      "LB",
+    ]);
   });
 
   it("uses the domain unit and evidence enums", () => {
@@ -222,6 +236,9 @@ describe("OpenAI FoodDay function tools", () => {
       "resultingRevision",
       "deletedAt",
       "expectedCompleteness",
+      "weightKg",
+      "createdAt",
+      "observationId",
     ]) {
       expect(encoded).not.toContain(field);
     }

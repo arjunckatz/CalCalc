@@ -167,7 +167,8 @@ function supportedToolName(name: string): FoodDayToolCall["name"] {
     name === "UPDATE_FOOD_QUANTITY" ||
     name === "REMOVE_FOOD" ||
     name === "CHANGE_FOOD_STATUS" ||
-    name === "SET_FOOD_DAY_COMPLETENESS"
+    name === "SET_FOOD_DAY_COMPLETENESS" ||
+    name === "LOG_BODY_WEIGHT"
   ) {
     return name;
   }

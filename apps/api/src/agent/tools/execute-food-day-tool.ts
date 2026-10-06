@@ -11,6 +11,10 @@ import {
   createFoodEntryMutation,
   type CreateFoodEntryMutationResult,
 } from "../../mutations/create-food-entry.js";
+import {
+  logBodyWeightMutation,
+  type LogBodyWeightMutationResult,
+} from "../../mutations/log-body-weight.js";
 import type { IdempotencyKey } from "../../mutations/mutation-identity.js";
 import {
   removeFoodEntryMutation,
@@ -24,7 +28,7 @@ import {
   updateFoodEntryMutation,
   type UpdateFoodEntryMutationResult,
 } from "../../mutations/update-food-entry.js";
-import { parseFoodDayToolCall } from "./food-day-tools.js";
+import { parseFoodDayToolCall, ToolValidationError } from "./food-day-tools.js";
 
 export interface TrustedFoodDayToolContext {
   readonly trustedUserId: string;
@@ -32,6 +36,8 @@ export interface TrustedFoodDayToolContext {
   readonly idempotencyKey: IdempotencyKey;
   /** Completeness from the fresh canonical STATE shown to the model. */
   readonly stateCompleteness: FoodDayCompleteness;
+  /** Exact current turn text; its explicit date is required for weight logging. */
+  readonly userMessage: string;
 }
 
 export type FoodDayToolResult =
@@ -54,6 +60,10 @@ export type FoodDayToolResult =
   | {
       readonly name: "SET_FOOD_DAY_COMPLETENESS";
       readonly result: SetFoodDayCompletenessMutationResult;
+    }
+  | {
+      readonly name: "LOG_BODY_WEIGHT";
+      readonly result: LogBodyWeightMutationResult;
     };
 
 export async function executeFoodDayTool(
@@ -121,5 +131,51 @@ export async function executeFoodDayTool(
           },
         }),
       };
+    case "LOG_BODY_WEIGHT":
+      if (
+        !mentionsExplicitDate(
+          trustedContext.userMessage,
+          call.arguments.localDate,
+        ) ||
+        !mentionsExplicitSourceUnit(
+          trustedContext.userMessage,
+          call.arguments.sourceUnit,
+        )
+      ) {
+        throw new ToolValidationError();
+      }
+      return {
+        name: call.name,
+        result: await logBodyWeightMutation(dependencies, {
+          trustedUserId,
+          idempotencyKey,
+          operationScope: "FOOD_DAY_TURN_TOOL",
+          command: call.arguments,
+        }),
+      };
   }
+}
+
+function mentionsExplicitDate(message: string, localDate: string): boolean {
+  if (typeof message !== "string") return false;
+  // A date embedded in a larger word, number, or hyphenated token is not an
+  // explicit standalone measurement date.
+  for (const match of message.matchAll(
+    /(?:^|[^\p{L}\p{N}_-])(\d{4}-\d{2}-\d{2})(?![\p{L}\p{N}_-])/gu,
+  )) {
+    if (match[1] === localDate) return true;
+  }
+  return false;
+}
+
+function mentionsExplicitSourceUnit(
+  message: string,
+  sourceUnit: "KG" | "LB",
+): boolean {
+  if (typeof message !== "string") return false;
+  const unitToken =
+    sourceUnit === "KG"
+      ? /(?:^|[^\p{L}_])(?:kg|kgs|kilogram|kilograms|kilo|kilos)(?![\p{L}\p{N}_])/iu
+      : /(?:^|[^\p{L}_])(?:lb|lbs|pound|pounds)(?![\p{L}\p{N}_])/iu;
+  return unitToken.test(message);
 }

@@ -324,6 +324,42 @@ describe("parseFoodDayToolCall", () => {
     expect(parseFoodDayToolCall(removeCall())).toEqual(removeCall());
   });
 
+  it("accepts an explicit-date body-weight observation without converting its source value", () => {
+    const call = {
+      name: "LOG_BODY_WEIGHT",
+      arguments: {
+        localDate: "2026-10-05",
+        sourceValue: "178.5",
+        sourceUnit: "LB",
+      },
+    };
+    expect(parseFoodDayToolCall(call)).toEqual(call);
+  });
+
+  it.each([
+    { localDate: undefined },
+    { sourceValue: undefined },
+    { sourceValue: 178.5 },
+    { sourceUnit: undefined },
+    { sourceUnit: "STONE" },
+    { localDate: "today" },
+    { weightKg: "80" },
+    { trustedUserId: "attacker" },
+  ])("rejects invalid or internal weight arguments %#", (change) => {
+    const argumentsValue = {
+      localDate: "2026-10-05",
+      sourceValue: "178.5",
+      sourceUnit: "LB",
+      ...change,
+    };
+    expect(() =>
+      parseFoodDayToolCall({
+        name: "LOG_BODY_WEIGHT",
+        arguments: argumentsValue,
+      }),
+    ).toThrow(ToolValidationError);
+  });
+
   it.each(foodEntryStatuses)("accepts canonical status %s", (status) => {
     const call = {
       ...statusCall(),

@@ -344,6 +344,22 @@ prompt were unchanged. All six fixtures have an owner live pass across two runs,
 not one clean 6/6 run. These synthetic cases do not establish general
 target-progress reliability.
 
+The opt-in body-weight semantic eval has owner live semantic evidence for all
+seven cases across an initial full run and targeted reruns, not one clean 7/7
+run. The negated-date
+case required prompt-policy tuning; final targeted checks for that case and
+the correction case passed. With
+`OPENAI_API_KEY` and `OPENAI_MODEL` set locally, run
+`corepack pnpm --filter @cal-calc/api eval:openai:body-weight-semantics`.
+It covers exactly seven conversational cases: an actual dated observation,
+an unrelated appointment date, competing dates, a negated date, a goal,
+a correction request, and transcript-only history. It uses the production
+OpenAI adapter, prompts, and tool parser with synthetic FoodDay STATE, requires
+no database or backend mutation, and makes at most eight Responses calls on a
+successful run with retries disabled. It is excluded from normal tests/CI.
+The deterministic executor guard checks current-message date/unit evidence;
+it does not prove that a date semantically belongs to the weigh-in.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`

@@ -1,5 +1,6 @@
 import {
   evidenceClasses,
+  bodyWeightUnits,
   foodEntryStatuses,
   measurementUnits,
 } from "@cal-calc/domain";
@@ -124,6 +125,18 @@ export const openAIFoodDayTools: FunctionTool[] = [
       },
     }),
   },
+  {
+    type: "function",
+    name: "LOG_BODY_WEIGHT",
+    description:
+      "Record an actual body-weight observation with an explicit measurement date and source unit.",
+    strict: true,
+    parameters: strictObject({
+      localDate: { type: "string" },
+      sourceValue: decimalString,
+      sourceUnit: { type: "string", enum: bodyWeightUnits },
+    }),
+  },
 ];
 
 /**
@@ -136,7 +149,8 @@ export function normalizeOpenAIFoodDayToolArguments(
     | "UPDATE_FOOD_QUANTITY"
     | "REMOVE_FOOD"
     | "CHANGE_FOOD_STATUS"
-    | "SET_FOOD_DAY_COMPLETENESS",
+    | "SET_FOOD_DAY_COMPLETENESS"
+    | "LOG_BODY_WEIGHT",
   args: unknown,
 ): unknown {
   if (!isPlainDataRecord(args)) return args;

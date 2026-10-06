@@ -6,7 +6,10 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { logBodyWeightMutation } from "./log-body-weight.js";
-import { parseIdempotencyKey } from "./mutation-identity.js";
+import {
+  deriveMutationIdentity,
+  parseIdempotencyKey,
+} from "./mutation-identity.js";
 
 vi.mock("@cal-calc/persistence", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@cal-calc/persistence")>()),
@@ -130,6 +133,29 @@ describe("logBodyWeightMutation", () => {
     expect(second.operationKey).not.toBe(first.operationKey);
     expect(second.requestFingerprint).toBe(first.requestFingerprint);
     expect(second.entry.id).not.toBe(first.entry.id);
+  });
+
+  it("uses the shared turn-tool namespace when invoked by a trusted agent slot", async () => {
+    await logBodyWeightMutation(
+      { transactionRunner: runner },
+      {
+        trustedUserId: userId,
+        idempotencyKey: key,
+        operationScope: "FOOD_DAY_TURN_TOOL",
+        command,
+      },
+    );
+    const sent = workflow.mock.calls[0]![1];
+    const anotherAction = deriveMutationIdentity({
+      trustedUserId: userId,
+      idempotencyKey: key,
+      operationScope: "FOOD_DAY_TURN_TOOL",
+      action: "CREATE_FOOD_ENTRY",
+      semanticPayload: {},
+    });
+    expect(sent.operationKey).toBe(anotherAction.operationKey);
+    expect(sent.requestFingerprint).not.toBe(anotherAction.requestFingerprint);
+    expect(sent.entry.weightKg).toBe("81.7600246925");
   });
 
   it.each([

@@ -235,7 +235,7 @@ describe("OpenAI FoodDay decision binding", () => {
     expect(requestAt(create).input).not.toContain("do-not-send");
   });
 
-  it("offers exactly five functions with auto selection and disables response storage", async () => {
+  it("offers exactly six functions with auto selection and disables response storage", async () => {
     const { create, model } = setup();
     await model.decide(decisionInput("Hello"));
     const request = requestAt(create);
@@ -247,6 +247,7 @@ describe("OpenAI FoodDay decision binding", () => {
       "REMOVE_FOOD",
       "CHANGE_FOOD_STATUS",
       "SET_FOOD_DAY_COMPLETENESS",
+      "LOG_BODY_WEIGHT",
     ]);
     expect(request.tool_choice).toBe("auto");
     expect(request.store).toBe(false);
@@ -281,6 +282,7 @@ describe("OpenAI FoodDay decision binding", () => {
     "REMOVE_FOOD",
     "CHANGE_FOOD_STATUS",
     "SET_FOOD_DAY_COMPLETENESS",
+    "LOG_BODY_WEIGHT",
   ] as const)(
     "maps provider %s into an untrusted M4B1-compatible call",
     async (name) => {
@@ -312,7 +314,13 @@ describe("OpenAI FoodDay decision binding", () => {
                     expectedRevision: 1,
                     status: "PLANNED",
                   }
-                : { targetCompleteness: "USER_DECLARED_COMPLETE" };
+                : name === "SET_FOOD_DAY_COMPLETENESS"
+                  ? { targetCompleteness: "USER_DECLARED_COMPLETE" }
+                  : {
+                      localDate: "2026-10-05",
+                      sourceValue: "178.5",
+                      sourceUnit: "LB",
+                    };
       const { model } = setup(response("", [functionCall(name, args)]));
       const decision = await model.decide(decisionInput("Change"));
       expect(decision).toEqual({
@@ -457,6 +465,33 @@ describe("OpenAI FoodDay finalization binding", () => {
       stateBeforeMutations: state,
       userMessage: "Add apple",
       toolResults,
+    });
+  });
+
+  it("sends authoritative weight observation fields to tool-free finalization", async () => {
+    const { create, model } = setup();
+    const weightResult: FoodDayToolResult = {
+      name: "LOG_BODY_WEIGHT",
+      result: {
+        disposition: "CREATED",
+        weightEntry: {
+          id: "40000000-0000-4000-8000-000000000001",
+          localDate: "2026-10-05",
+          sourceValue: "178.5",
+          sourceUnit: "LB",
+          weightKg: "80.966238045",
+          createdAt: "2026-10-05T12:00:00Z",
+        },
+      },
+    };
+    await model.finalize({
+      ...finalizationInput("Log my weight"),
+      toolResults: [weightResult],
+    });
+    const request = requestAt(create);
+    expect(request).not.toHaveProperty("tools");
+    expect(JSON.parse(request.input as string)).toMatchObject({
+      toolResults: [weightResult],
     });
   });
 

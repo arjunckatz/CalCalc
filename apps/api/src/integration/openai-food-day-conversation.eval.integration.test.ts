@@ -228,6 +228,7 @@ function projectedTool(call: ReturnType<typeof parseFoodDayToolCall>) {
       targetCompleteness: call.arguments.targetCompleteness,
     };
   }
+  if (call.name === "LOG_BODY_WEIGHT") return { name: call.name };
   return {
     name: call.name,
     entryId: call.arguments.entryId,

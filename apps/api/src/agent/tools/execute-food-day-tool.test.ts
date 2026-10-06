@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFoodEntryMutation } from "../../mutations/create-food-entry.js";
 import { changeFoodEntryStatusMutation } from "../../mutations/change-food-entry-status.js";
+import { logBodyWeightMutation } from "../../mutations/log-body-weight.js";
 import { deriveMutationIdentity } from "../../mutations/mutation-identity.js";
 import { parseIdempotencyKey } from "../../mutations/mutation-identity.js";
 import { removeFoodEntryMutation } from "../../mutations/remove-food-entry.js";
@@ -31,17 +32,22 @@ vi.mock("../../mutations/change-food-entry-status.js", () => ({
 vi.mock("../../mutations/set-food-day-completeness.js", () => ({
   setFoodDayCompletenessMutation: vi.fn(),
 }));
+vi.mock("../../mutations/log-body-weight.js", () => ({
+  logBodyWeightMutation: vi.fn(),
+}));
 
 const createMutation = vi.mocked(createFoodEntryMutation);
 const updateMutation = vi.mocked(updateFoodEntryMutation);
 const removeMutation = vi.mocked(removeFoodEntryMutation);
 const statusMutation = vi.mocked(changeFoodEntryStatusMutation);
 const completenessMutation = vi.mocked(setFoodDayCompletenessMutation);
+const weightMutation = vi.mocked(logBodyWeightMutation);
 const trustedContext = {
   trustedUserId: "10000000-0000-4000-8000-000000000001",
   foodDayId: "20000000-0000-4000-8000-000000000001",
   idempotencyKey: parseIdempotencyKey("trusted-retry-key"),
   stateCompleteness: "PARTIAL" as const,
+  userMessage: "On 2026-10-05 I weighed 178.5 lb.",
 };
 const runner: PostgresTransactionRunner = {
   async runInTransaction() {
@@ -318,6 +324,181 @@ describe("executeFoodDayTool", () => {
     }
     expect(completenessMutation).not.toHaveBeenCalled();
   });
+
+  it("passes only validated weight data with trusted identity, child key, and tool scope", async () => {
+    const authoritative = {
+      disposition: "CREATED" as const,
+      weightEntry: {
+        id: "40000000-0000-4000-8000-000000000001",
+        localDate: "2026-10-05",
+        sourceValue: "178.5",
+        sourceUnit: "LB" as const,
+        weightKg: "80.966238045",
+        createdAt: "2026-10-05T12:00:00Z",
+      },
+    };
+    weightMutation.mockResolvedValueOnce(authoritative);
+    const output = await executeFoodDayTool(dependencies, trustedContext, {
+      name: "LOG_BODY_WEIGHT",
+      arguments: {
+        localDate: "2026-10-05",
+        sourceValue: "178.5",
+        sourceUnit: "LB",
+      },
+    });
+    expect(weightMutation).toHaveBeenCalledExactlyOnceWith(dependencies, {
+      trustedUserId: trustedContext.trustedUserId,
+      idempotencyKey: trustedContext.idempotencyKey,
+      operationScope: "FOOD_DAY_TURN_TOOL",
+      command: {
+        localDate: "2026-10-05",
+        sourceValue: "178.5",
+        sourceUnit: "LB",
+      },
+    });
+    expect(output).toEqual({ name: "LOG_BODY_WEIGHT", result: authoritative });
+    expect(JSON.parse(JSON.stringify(output))).toEqual(output);
+  });
+
+  it.each([
+    "I weighed 178.5 lb today.",
+    "Yesterday I was 178.5 lb.",
+    "I weigh 178.5 lb.",
+    "On 2026-10-04 I weighed 178.5 lb.",
+    "On 2026-10-050 I weighed 178.5 lb.",
+    "On 12026-10-05 I weighed 178.5 lb.",
+    "On 2026-10-05abc I weighed 178.5 lb.",
+    "On 2026-10-05-other I weighed 178.5 lb.",
+  ])(
+    "does not mutate without the same explicit date in the current message: %s",
+    async (userMessage) => {
+      await expect(
+        executeFoodDayTool(
+          dependencies,
+          { ...trustedContext, userMessage },
+          {
+            name: "LOG_BODY_WEIGHT",
+            arguments: {
+              localDate: "2026-10-05",
+              sourceValue: "178.5",
+              sourceUnit: "LB",
+            },
+          },
+        ),
+      ).rejects.toBeInstanceOf(ToolValidationError);
+      expect(weightMutation).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ignores a date supplied only by prior transcript data", async () => {
+    const contextWithHistory = {
+      ...trustedContext,
+      userMessage: "I weighed 80 kg today.",
+      recentTranscript: [
+        { userMessage: "On 2026-10-05 I weighed 79 kg.", response: "Noted." },
+      ],
+    };
+    await expect(
+      executeFoodDayTool(dependencies, contextWithHistory, {
+        name: "LOG_BODY_WEIGHT",
+        arguments: {
+          localDate: "2026-10-05",
+          sourceValue: "80",
+          sourceUnit: "KG",
+        },
+      }),
+    ).rejects.toBeInstanceOf(ToolValidationError);
+    expect(weightMutation).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["I weighed 80 on 2026-10-05.", "KG"],
+    ["I weighed 80 lb on 2026-10-05.", "KG"],
+    ["I weighed 80 kg on 2026-10-05.", "LB"],
+    ["I weighed 80kgabc on 2026-10-05.", "KG"],
+  ] as const)(
+    "does not accept an absent or mismatched source unit: %s / %s",
+    async (userMessage, sourceUnit) => {
+      await expect(
+        executeFoodDayTool(
+          dependencies,
+          { ...trustedContext, userMessage },
+          {
+            name: "LOG_BODY_WEIGHT",
+            arguments: {
+              localDate: "2026-10-05",
+              sourceValue: "80",
+              sourceUnit,
+            },
+          },
+        ),
+      ).rejects.toBeInstanceOf(ToolValidationError);
+      expect(weightMutation).not.toHaveBeenCalled();
+    },
+  );
+
+  it("passes the same trusted weight command and child key on execution retry", async () => {
+    const authoritative = {
+      disposition: "REPLAYED" as const,
+      weightEntry: {
+        id: "40000000-0000-4000-8000-000000000001",
+        localDate: "2026-10-05",
+        sourceValue: "178.5",
+        sourceUnit: "LB" as const,
+        weightKg: "80.966238045",
+        createdAt: "2026-10-05T12:00:00Z",
+      },
+    };
+    weightMutation.mockResolvedValue(authoritative);
+    const call = {
+      name: "LOG_BODY_WEIGHT",
+      arguments: {
+        localDate: "2026-10-05",
+        sourceValue: "178.5",
+        sourceUnit: "LB",
+      },
+    };
+    await executeFoodDayTool(dependencies, trustedContext, call);
+    const replay = await executeFoodDayTool(dependencies, trustedContext, call);
+    expect(weightMutation).toHaveBeenCalledTimes(2);
+    expect(weightMutation.mock.calls[0]?.[1]).toEqual(
+      weightMutation.mock.calls[1]?.[1],
+    );
+    expect(replay).toEqual({ name: "LOG_BODY_WEIGHT", result: authoritative });
+  });
+
+  it.each([
+    ["On 2026-10-05 I weighed 80kg.", "KG"],
+    ["On 2026-10-05 my scale showed 178 pounds.", "LB"],
+  ] as const)(
+    "accepts an explicit source unit in %s",
+    async (userMessage, sourceUnit) => {
+      weightMutation.mockResolvedValueOnce({
+        disposition: "CREATED",
+        weightEntry: {
+          id: "40000000-0000-4000-8000-000000000001",
+          localDate: "2026-10-05",
+          sourceValue: sourceUnit === "KG" ? "80" : "178",
+          sourceUnit,
+          weightKg: sourceUnit === "KG" ? "80" : "80.73944186",
+          createdAt: "2026-10-05T12:00:00Z",
+        },
+      });
+      await executeFoodDayTool(
+        dependencies,
+        { ...trustedContext, userMessage },
+        {
+          name: "LOG_BODY_WEIGHT",
+          arguments: {
+            localDate: "2026-10-05",
+            sourceValue: sourceUnit === "KG" ? "80" : "178",
+            sourceUnit,
+          },
+        },
+      );
+      expect(weightMutation).toHaveBeenCalledOnce();
+    },
+  );
 
   it("propagates completeness stale-CAS and fresh same-value errors", async () => {
     const call = {

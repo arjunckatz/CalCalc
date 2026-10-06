@@ -436,6 +436,7 @@ describe("runFoodDayTurn trusted tool execution", () => {
         trustedUserId: trustedInput.trustedUserId,
         foodDayId: trustedInput.foodDayId,
         stateCompleteness: initialState.foodDay.completeness,
+        userMessage: trustedInput.userMessage,
         idempotencyKey: deriveFoodDayToolIdempotencyKey(
           trustedInput.turnIdempotencyKey,
           0,
@@ -465,6 +466,37 @@ describe("runFoodDayTurn trusted tool execution", () => {
     const second = toolExecutor.mock.calls[1]?.[1].idempotencyKey;
     expect(first).not.toBe(second);
     expect(parseIdempotencyKey(second)).toBe(second);
+  });
+
+  it("keeps two same-date LOG_BODY_WEIGHT calls in distinct ordered slots", async () => {
+    const first = {
+      name: "LOG_BODY_WEIGHT",
+      arguments: {
+        localDate: "2026-10-05",
+        sourceValue: "80.2",
+        sourceUnit: "KG",
+      },
+    };
+    const second = {
+      name: "LOG_BODY_WEIGHT",
+      arguments: {
+        localDate: "2026-10-05",
+        sourceValue: "81.0",
+        sourceUnit: "KG",
+      },
+    };
+    const { dependencies } = setup({ type: "TOOLS", calls: [first, second] });
+    await runFoodDayTurn(dependencies, {
+      ...trustedInput,
+      userMessage: "On 2026-10-05 I weighed 80.2 kg, then 81.0 kg.",
+    });
+    expect(toolExecutor.mock.calls.map(([, , call]) => call)).toEqual([
+      first,
+      second,
+    ]);
+    expect(toolExecutor.mock.calls[0]?.[1].idempotencyKey).not.toBe(
+      toolExecutor.mock.calls[1]?.[1].idempotencyKey,
+    );
   });
 
   it("passes the same fresh STATE completeness to every sequential tool slot", async () => {

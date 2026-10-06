@@ -108,6 +108,7 @@ export async function runFoodDayTurn(
             trustedUserId: input.trustedUserId,
             foodDayId: input.foodDayId,
             stateCompleteness: state.foodDay.completeness,
+            userMessage,
             // Arguments and action are excluded: a changed retry at this slot
             // reaches the agent-scoped fingerprint conflict check.
             idempotencyKey: deriveFoodDayToolIdempotencyKey(
@@ -231,7 +232,8 @@ function safeToolName(value: unknown): FoodDayToolCall["name"] | undefined {
       name === "UPDATE_FOOD_QUANTITY" ||
       name === "REMOVE_FOOD" ||
       name === "CHANGE_FOOD_STATUS" ||
-      name === "SET_FOOD_DAY_COMPLETENESS"
+      name === "SET_FOOD_DAY_COMPLETENESS" ||
+      name === "LOG_BODY_WEIGHT"
       ? name
       : undefined;
   } catch {

@@ -28,3 +28,74 @@ describe("FoodDay target-progress instructions", () => {
     expect(text).toMatch(/do not present it as current/);
   });
 });
+
+describe("body-weight observation policy", () => {
+  it("requires an actual observation, explicit unit and absolute current-message date", () => {
+    expect(decisionInstructions).toContain("actual reported weigh-in");
+    expect(decisionInstructions).toContain(
+      "explicit YYYY-MM-DD measurement date and an explicit KG or LB unit in the current user message",
+    );
+    expect(decisionInstructions).toContain(
+      "FoodDay.localDate is not the user's current civil date",
+    );
+    expect(decisionInstructions).toContain(
+      "today, yesterday, or an omitted date",
+    );
+    expect(decisionInstructions).toContain(
+      "goals, hypotheticals, aspirations, or vague estimates",
+    );
+    expect(decisionInstructions).toContain("correction is not supported yet");
+    expect(decisionInstructions).toContain(
+      "do not answer weight-history or trend questions from transcript",
+    );
+    expect(decisionInstructions).toContain("Do not calculate kilograms");
+  });
+
+  it("uses the authoritative source observation in finalization", () => {
+    expect(finalizationInstructions).toContain(
+      "source value, source unit, and measurement date",
+    );
+    expect(finalizationInstructions).toContain(
+      "use only the backend tool result",
+    );
+    expect(finalizationInstructions).toContain("CREATED and REPLAYED");
+  });
+
+  it("encodes D and nearby negated-alternative observations without inventing a stored entry", () => {
+    expect(decisionInstructions).toContain(
+      "Do not infer that a stored weigh-in exists solely because the user negates one date or value and affirms another",
+    );
+    expect(decisionInstructions).toContain(
+      "there is no canonical weight-history read path",
+    );
+    expect(decisionInstructions).toContain(
+      "independently affirms an actual measurement with explicit date, value, and unit, use LOG_BODY_WEIGHT for that affirmed observation",
+    );
+    expect(decisionInstructions).toContain(
+      '"I wasn\'t 80 kg on 2026-10-05; I was 80 kg on 2026-10-06" means call LOG_BODY_WEIGHT with localDate 2026-10-06, sourceValue 80, sourceUnit KG; it is not a correction',
+    );
+  });
+
+  it("encodes F and nearby existing-weigh-in edit paraphrases without appending", () => {
+    expect(decisionInstructions).toContain(
+      '"Correction: the 2026-10-05 weigh-in was 79.8 kg, not 80.8 kg" targets an existing weigh-in and must be answered without a tool',
+    );
+    expect(decisionInstructions).toContain(
+      "Positive evidence of correction intent includes requests to change, update, correct, replace, or remove",
+    );
+    for (const referent of [
+      '"the weigh-in"',
+      '"that weigh-in"',
+      '"the entry"',
+      '"the one I logged"',
+      "an earlier weigh-in",
+    ]) {
+      expect(decisionInstructions).toContain(referent);
+    }
+    expect(decisionInstructions).toContain(
+      "such an existing observation should have had a different value",
+    );
+    expect(decisionInstructions).toContain("correction is not supported yet");
+    expect(decisionInstructions).toContain("never append a replacement row");
+  });
+});

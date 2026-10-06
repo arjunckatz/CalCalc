@@ -9,6 +9,7 @@ import {
 import {
   deriveMutationIdentity,
   type IdempotencyKey,
+  type MutationOperationScope,
 } from "./mutation-identity.js";
 
 export interface LogBodyWeightCommand {
@@ -21,6 +22,7 @@ export interface LogBodyWeightMutationInput {
   /** Verified application identity, never supplied by the command. */
   readonly trustedUserId: string;
   readonly idempotencyKey: IdempotencyKey;
+  readonly operationScope?: MutationOperationScope;
   readonly command: LogBodyWeightCommand;
 }
 
@@ -66,6 +68,9 @@ export async function logBodyWeightMutation(
     trustedUserId: input.trustedUserId,
     action: "LOG_BODY_WEIGHT",
     idempotencyKey: input.idempotencyKey,
+    ...(input.operationScope === undefined
+      ? {}
+      : { operationScope: input.operationScope }),
     semanticPayload: {
       localDate: entry.localDate,
       sourceValue: entry.sourceValue,

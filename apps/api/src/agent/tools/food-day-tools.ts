@@ -1,5 +1,6 @@
 import {
   DomainValidationError,
+  bodyWeightUnits,
   evidenceClasses,
   foodEntryStatuses,
   measurementUnits,
@@ -13,6 +14,7 @@ import type { FoodDayCompleteness } from "@cal-calc/persistence";
 
 import type { CreateFoodEntryCommand } from "../../mutations/create-food-entry.js";
 import type { ChangeFoodEntryStatusCommand } from "../../mutations/change-food-entry-status.js";
+import type { LogBodyWeightCommand } from "../../mutations/log-body-weight.js";
 import type { RemoveFoodEntryCommand } from "../../mutations/remove-food-entry.js";
 import type { UpdateFoodEntryCommand } from "../../mutations/update-food-entry.js";
 
@@ -53,6 +55,10 @@ export type FoodDayToolCall =
       readonly arguments: {
         readonly targetCompleteness: (typeof modelFoodDayCompletenessTargets)[number];
       };
+    }
+  | {
+      readonly name: "LOG_BODY_WEIGHT";
+      readonly arguments: LogBodyWeightCommand;
     };
 
 const nutritionFields = [
@@ -100,6 +106,11 @@ export function parseFoodDayToolCall(input: unknown): FoodDayToolCall {
       return {
         name: "SET_FOOD_DAY_COMPLETENESS",
         arguments: parseCompletenessArguments(call.arguments),
+      };
+    case "LOG_BODY_WEIGHT":
+      return {
+        name: "LOG_BODY_WEIGHT",
+        arguments: parseBodyWeightArguments(call.arguments),
       };
     default:
       throw new ToolValidationError();
@@ -197,6 +208,23 @@ function parseCompletenessArguments(
   const value = strictObject(input, ["targetCompleteness"]);
   requireMember(value.targetCompleteness, modelFoodDayCompletenessTargets);
   return { targetCompleteness: value.targetCompleteness };
+}
+
+function parseBodyWeightArguments(input: unknown): LogBodyWeightCommand {
+  const value = strictObject(input, ["localDate", "sourceValue", "sourceUnit"]);
+  if (
+    typeof value.localDate !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(value.localDate)
+  ) {
+    throw new ToolValidationError();
+  }
+  decimalText(value.sourceValue);
+  requireMember(value.sourceUnit, bodyWeightUnits);
+  return {
+    localDate: value.localDate,
+    sourceValue: value.sourceValue,
+    sourceUnit: value.sourceUnit,
+  };
 }
 
 function parseQuantityInput(input: unknown) {
