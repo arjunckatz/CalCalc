@@ -6,7 +6,8 @@ export type MutationAction =
   | "UPDATE_FOOD_ENTRY"
   | "REMOVE_FOOD_ENTRY"
   | "CHANGE_FOOD_ENTRY_STATUS"
-  | "SET_FOOD_DAY_COMPLETENESS";
+  | "SET_FOOD_DAY_COMPLETENESS"
+  | "LOG_BODY_WEIGHT";
 
 export type MutationOperationScope = "FOOD_DAY_TURN_TOOL";
 
@@ -84,7 +85,8 @@ export function deriveMutationIdentity(
     action !== "UPDATE_FOOD_ENTRY" &&
     action !== "REMOVE_FOOD_ENTRY" &&
     action !== "CHANGE_FOOD_ENTRY_STATUS" &&
-    action !== "SET_FOOD_DAY_COMPLETENESS"
+    action !== "SET_FOOD_DAY_COMPLETENESS" &&
+    action !== "LOG_BODY_WEIGHT"
   ) {
     throw new MutationIdentityError("INVALID_ACTION");
   }

@@ -101,11 +101,13 @@ describe("createFoodEntryExactlyOnce", () => {
       "update public.semantic_operations",
     );
     expect(runner.executor.calls[1]?.values[23]).toBe(operationId);
-    expect(runner.executor.calls[2]?.values[2]).toEqual(resultJson);
-    const completionTimestamp = runner.executor.calls[2]?.values[3];
-    expect(typeof completionTimestamp).toBe("string");
-    expect(new Date(completionTimestamp as string).toISOString()).toBe(
-      completionTimestamp,
+    expect(runner.executor.calls[2]?.values).toEqual([
+      userId,
+      operationKey,
+      resultJson,
+    ]);
+    expect(normalizeSql(runner.executor.calls[2]?.queryText)).toContain(
+      "completed_at = clock_timestamp()",
     );
   });
 

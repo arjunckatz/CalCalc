@@ -114,19 +114,16 @@ describe("PostgreSQL semantic-operation repository", () => {
     expect(userBClaim.operation.userId).toBe(userB.id);
 
     const successResult = { entryId: randomUUID(), outcome: "CREATED" };
-    const succeededAt = futureTimestamp(60_000);
     const succeeded = await repository.markSucceeded({
       userId: userA.id,
       operationKey,
       result: successResult,
-      completedAt: succeededAt,
     });
     expect(succeeded.status).toBe("SUCCEEDED");
     expect(succeeded.result).toEqual(successResult);
     expect(succeeded.error).toBeNull();
-    expect(new Date(succeeded.completedAt ?? "").toISOString()).toBe(
-      succeededAt,
-    );
+    expect(succeeded.completedAt).toEqual(expect.any(String));
+    expect(await completionFollowsClaim(operationKey)).toBe(true);
     expect(await repository.findByKey(userA.id, operationKey)).toEqual(
       succeeded,
     );
@@ -136,7 +133,6 @@ describe("PostgreSQL semantic-operation repository", () => {
         userId: userA.id,
         operationKey,
         error: { code: "LATE_FAILURE" },
-        completedAt: futureTimestamp(120_000),
       }),
     ).rejects.toMatchObject({
       name: "SemanticOperationStateConflictError",
@@ -154,12 +150,10 @@ describe("PostgreSQL semantic-operation repository", () => {
       operationKey: failedKey,
       requestFingerprint: `request-${randomUUID()}`,
     });
-    const failedAt = futureTimestamp(180_000);
     const failed = await repository.markFailed({
       userId: userA.id,
       operationKey: failedKey,
       error: { code: "ESTIMATE_FAILED", retryable: false },
-      completedAt: failedAt,
     });
     expect(failed.status).toBe("FAILED");
     expect(failed.result).toBeNull();
@@ -167,7 +161,8 @@ describe("PostgreSQL semantic-operation repository", () => {
       code: "ESTIMATE_FAILED",
       retryable: false,
     });
-    expect(new Date(failed.completedAt ?? "").toISOString()).toBe(failedAt);
+    expect(failed.completedAt).toEqual(expect.any(String));
+    expect(await completionFollowsClaim(failedKey)).toBe(true);
     expect(await repository.findByKey(userA.id, failedKey)).toEqual(failed);
   });
 });
@@ -177,8 +172,14 @@ function testUser(): TestUser {
   return { id, email: `cal-calc-m2b5-${id}@example.invalid` };
 }
 
-function futureTimestamp(offsetMilliseconds: number): string {
-  return new Date(Date.now() + offsetMilliseconds).toISOString();
+async function completionFollowsClaim(operationKey: string): Promise<boolean> {
+  const result = await client.query<{ readonly ordered: boolean }>(
+    `select completed_at >= created_at as ordered
+     from public.semantic_operations
+     where user_id = $1 and operation_key = $2`,
+    [userA.id, operationKey],
+  );
+  return result.rows[0]?.ordered === true;
 }
 
 async function createFixtures(

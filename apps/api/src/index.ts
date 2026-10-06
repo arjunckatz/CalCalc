@@ -102,6 +102,13 @@ export {
   type CreateFoodDayMutationResult,
 } from "./mutations/create-food-day.js";
 export {
+  logBodyWeightMutation,
+  InvalidLogBodyWeightCommandError,
+  type LogBodyWeightCommand,
+  type LogBodyWeightMutationInput,
+  type LogBodyWeightMutationResult,
+} from "./mutations/log-body-weight.js";
+export {
   updateFoodEntryMutation,
   type UpdateFoodEntryCommand,
   type UpdateFoodEntryMutationInput,

@@ -71,6 +71,19 @@ export function subtractDecimals(
   return new DomainDecimal(left).minus(right).toFixed();
 }
 
+/** Exact finite-decimal multiplication, including operands beyond the default precision. */
+export function multiplyDecimalsExact(
+  left: DecimalString,
+  right: DecimalString,
+): DecimalString {
+  const precision = Math.max(
+    40,
+    left.replace(/\D/g, "").length + right.replace(/\D/g, "").length,
+  );
+  const ExactDecimal = DomainDecimal.clone({ precision });
+  return new ExactDecimal(left).times(right).toFixed();
+}
+
 export function scaleDecimal(
   value: DecimalString,
   multiplier: DecimalString,

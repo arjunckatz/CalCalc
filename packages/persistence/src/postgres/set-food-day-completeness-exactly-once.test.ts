@@ -159,12 +159,14 @@ describe("setFoodDayCompletenessExactlyOnce", () => {
       "UNKNOWN",
       "PARTIAL",
     ]);
-    expect(runner.executor.calls[2]?.values).toMatchObject([
+    expect(runner.executor.calls[2]?.values).toEqual([
       userId,
       operationKey,
       appliedResult,
-      expect.any(String),
     ]);
+    expect(runner.executor.calls[2]?.sql).toContain(
+      "completed_at = clock_timestamp()",
+    );
   });
 
   it("replays before stale/no-op validation without writing the day again", async () => {

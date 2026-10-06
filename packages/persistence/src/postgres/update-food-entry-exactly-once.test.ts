@@ -82,87 +82,78 @@ class ScriptedTransactionRunner implements PostgresTransactionRunner {
 }
 
 describe("updateFoodEntryExactlyOnce", () => {
-  it("claims, updates once, and completes on one executor with a post-update timestamp", async () => {
+  it("claims, updates once, and completes on one executor using database time", async () => {
     const original = originalEntry();
     const entry = correctedEntry();
     const transform = vi.fn((current: FoodEntry) =>
       changeQuantity(current, "250"),
     );
-    const completedAt = "2026-09-05T00:00:01.000Z";
     const runner = new ScriptedTransactionRunner([
       [operationRow()],
       [foodEntryRow(original)],
-      () => {
-        vi.setSystemTime(completedAt);
-        return [foodEntryRow(entry)];
-      },
-      [succeededRow(successfulResult, completedAt)],
+      [foodEntryRow(entry)],
+      [succeededRow(successfulResult)],
     ]);
     const validateCurrent = vi.fn((current: FoodEntry) => {
       expect(current).toEqual(original);
       expect(runner.executor.calls).toHaveLength(2);
     });
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(timestamp);
+    const result = await updateFoodEntryExactlyOnce(
+      runner,
+      workflowInput({ validateCurrent, transform }),
+    );
 
-    try {
-      const result = await updateFoodEntryExactlyOnce(
-        runner,
-        workflowInput({ validateCurrent, transform }),
-      );
-
-      expect(result.disposition).toBe("APPLIED");
-      expect(result.entry.entry).toEqual(entry);
-      expect(result.entry.lastOperationId).toBe(operationId);
-      expect(result.appliedRevision).toBe(entry.revision);
-      expect(result.operation).toMatchObject({
-        id: operationId,
-        status: "SUCCEEDED",
-        result: successfulResult,
-        completedAt,
-      });
-      expect(runner).toMatchObject({ attempts: 1, commits: 1, rollbacks: 0 });
-      expect(validateCurrent).toHaveBeenCalledExactlyOnceWith(original);
-      expect(transform).toHaveBeenCalledExactlyOnceWith(original);
-      expect(validateCurrent.mock.invocationCallOrder[0]).toBeLessThan(
-        transform.mock.invocationCallOrder[0]!,
-      );
-      expect(runner.executor.calls).toHaveLength(4);
-      const [claim, load, update, completion] = runner.executor.calls;
-      expect(normalizeSql(claim?.queryText)).toContain(
-        "insert into public.semantic_operations",
-      );
-      expect(claim?.values).toEqual([
-        operationId,
-        userId,
-        operationKey,
-        fingerprint,
-      ]);
-      expect(normalizeSql(load?.queryText)).toContain(
-        "from public.food_entries where id = $1 and user_id = $2",
-      );
-      expect(load?.values).toEqual([entryId, userId]);
-      expect(normalizeSql(update?.queryText)).toContain(
-        "update public.food_entries",
-      );
-      expect(normalizeSql(update?.queryText)).toContain(
-        "where id = $1 and user_id = $2 and revision = $22",
-      );
-      expect(update?.values[19]).toBe(2);
-      expect(update?.values[21]).toBe(1);
-      expect(update?.values[22]).toBe(operationId);
-      expect(normalizeSql(completion?.queryText)).toContain(
-        "update public.semantic_operations",
-      );
-      expect(completion?.values).toEqual([
-        userId,
-        operationKey,
-        successfulResult,
-        completedAt,
-      ]);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(result.disposition).toBe("APPLIED");
+    expect(result.entry.entry).toEqual(entry);
+    expect(result.entry.lastOperationId).toBe(operationId);
+    expect(result.appliedRevision).toBe(entry.revision);
+    expect(result.operation).toMatchObject({
+      id: operationId,
+      status: "SUCCEEDED",
+      result: successfulResult,
+      completedAt: timestamp,
+    });
+    expect(runner).toMatchObject({ attempts: 1, commits: 1, rollbacks: 0 });
+    expect(validateCurrent).toHaveBeenCalledExactlyOnceWith(original);
+    expect(transform).toHaveBeenCalledExactlyOnceWith(original);
+    expect(validateCurrent.mock.invocationCallOrder[0]).toBeLessThan(
+      transform.mock.invocationCallOrder[0]!,
+    );
+    expect(runner.executor.calls).toHaveLength(4);
+    const [claim, load, update, completion] = runner.executor.calls;
+    expect(normalizeSql(claim?.queryText)).toContain(
+      "insert into public.semantic_operations",
+    );
+    expect(claim?.values).toEqual([
+      operationId,
+      userId,
+      operationKey,
+      fingerprint,
+    ]);
+    expect(normalizeSql(load?.queryText)).toContain(
+      "from public.food_entries where id = $1 and user_id = $2",
+    );
+    expect(load?.values).toEqual([entryId, userId]);
+    expect(normalizeSql(update?.queryText)).toContain(
+      "update public.food_entries",
+    );
+    expect(normalizeSql(update?.queryText)).toContain(
+      "where id = $1 and user_id = $2 and revision = $22",
+    );
+    expect(update?.values[19]).toBe(2);
+    expect(update?.values[21]).toBe(1);
+    expect(update?.values[22]).toBe(operationId);
+    expect(normalizeSql(completion?.queryText)).toContain(
+      "update public.semantic_operations",
+    );
+    expect(completion?.values).toEqual([
+      userId,
+      operationKey,
+      successfulResult,
+    ]);
+    expect(normalizeSql(completion?.queryText)).toContain(
+      "completed_at = clock_timestamp()",
+    );
   });
 
   it("replays a succeeded operation without updating or completing again", async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import type { SemanticOperationRow } from "../types.js";
 import type { PostgresExecutor } from "./food-entry-repository.js";
@@ -7,6 +7,8 @@ import {
   SemanticOperationIdempotencyConflictError,
   SemanticOperationNotFoundError,
   SemanticOperationStateConflictError,
+  type MarkSemanticOperationFailedInput,
+  type MarkSemanticOperationSucceededInput,
 } from "./semantic-operation-repository.js";
 
 const operationId = "30000000-0000-4000-8000-000000000001";
@@ -36,6 +38,15 @@ class ScriptedExecutor implements PostgresExecutor {
 }
 
 describe("PostgresSemanticOperationRepository", () => {
+  it("does not allow caller-owned completion timestamps in either contract", () => {
+    expectTypeOf<MarkSemanticOperationSucceededInput>().not.toHaveProperty(
+      "completedAt",
+    );
+    expectTypeOf<MarkSemanticOperationFailedInput>().not.toHaveProperty(
+      "completedAt",
+    );
+  });
+
   it("atomically claims a new PENDING operation", async () => {
     const row = operationRow();
     const executor = new ScriptedExecutor([[row]]);
@@ -122,18 +133,19 @@ describe("PostgresSemanticOperationRepository", () => {
       userId,
       operationKey,
       result: { entryId: "entry-1" },
-      completedAt: timestamp,
     });
 
     expect(completed).toEqual(persistedOperation(row));
     expect(normalizeSql(executor.calls[0]?.queryText)).toContain(
       "where user_id = $1 and operation_key = $2 and status = 'PENDING'",
     );
+    expect(normalizeSql(executor.calls[0]?.queryText)).toContain(
+      "completed_at = clock_timestamp()",
+    );
     expect(executor.calls[0]?.values).toEqual([
       userId,
       operationKey,
       { entryId: "entry-1" },
-      timestamp,
     ]);
   });
 
@@ -150,13 +162,20 @@ describe("PostgresSemanticOperationRepository", () => {
       userId,
       operationKey,
       error: { code: "ESTIMATE_FAILED" },
-      completedAt: timestamp,
     });
 
     expect(completed).toEqual(persistedOperation(row));
     expect(normalizeSql(executor.calls[0]?.queryText)).toContain(
       "where user_id = $1 and operation_key = $2 and status = 'PENDING'",
     );
+    expect(normalizeSql(executor.calls[0]?.queryText)).toContain(
+      "completed_at = clock_timestamp()",
+    );
+    expect(executor.calls[0]?.values).toEqual([
+      userId,
+      operationKey,
+      { code: "ESTIMATE_FAILED" },
+    ]);
   });
 
   it("reports terminal completion attempts as state conflicts", async () => {
@@ -173,7 +192,6 @@ describe("PostgresSemanticOperationRepository", () => {
         userId,
         operationKey,
         error: { code: "LATE_FAILURE" },
-        completedAt: timestamp,
       }),
     ).rejects.toMatchObject({
       name: "SemanticOperationStateConflictError",
@@ -191,7 +209,6 @@ describe("PostgresSemanticOperationRepository", () => {
         userId: otherUserId,
         operationKey,
         result: {},
-        completedAt: timestamp,
       }),
     ).rejects.toBeInstanceOf(SemanticOperationNotFoundError);
     expect(executor.calls[1]?.values).toEqual([otherUserId, operationKey]);

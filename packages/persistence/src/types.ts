@@ -1,4 +1,6 @@
 import type {
+  BodyWeightEntry,
+  BodyWeightUnit,
   EvidenceClass,
   FoodDay,
   FoodDayStatus,
@@ -8,6 +10,22 @@ import type {
   Nutrition,
   NutritionOverride,
 } from "@cal-calc/domain";
+
+export interface BodyWeightEntryRow {
+  readonly id: string;
+  readonly user_id: string;
+  readonly local_date: string;
+  readonly source_value: string;
+  readonly source_unit: BodyWeightUnit;
+  readonly weight_kg: string;
+  readonly created_at: string;
+}
+
+export interface PersistedBodyWeightEntry {
+  readonly entry: BodyWeightEntry;
+  readonly userId: string;
+  readonly createdAt: string;
+}
 
 export const foodDayCompletenessValues = [
   "UNKNOWN",

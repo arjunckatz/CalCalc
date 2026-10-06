@@ -7,11 +7,19 @@ export {
 export { calculateNutrition } from "./nutrition/calculate.js";
 export {
   compareDecimals,
+  multiplyDecimalsExact,
   normalizeDecimal,
   roundDecimalForDisplay,
   subtractDecimals,
   type DecimalString,
 } from "./nutrition/decimal.js";
+export {
+  bodyWeightUnits,
+  createBodyWeightEntry,
+  type BodyWeightEntry,
+  type BodyWeightUnit,
+  type CreateBodyWeightEntryInput,
+} from "./weight/body-weight-entry.js";
 export {
   measurementUnits,
   parseNutrition,

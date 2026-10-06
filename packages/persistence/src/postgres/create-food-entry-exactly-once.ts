@@ -92,12 +92,10 @@ export async function createFoodEntryExactlyOnce(
       kind: "FOOD_ENTRY_CREATED",
       entryId: entry.entry.id,
     } as const satisfies JsonObject;
-    const completedAt = new Date().toISOString();
     const operation = await operationRepository.markSucceeded({
       userId: input.userId,
       operationKey: input.operationKey,
       result,
-      completedAt,
     });
 
     return { disposition: "CREATED", entry, operation };

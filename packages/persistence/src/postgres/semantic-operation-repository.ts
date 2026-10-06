@@ -26,7 +26,6 @@ export type SemanticOperationClaim =
 export interface CompleteSemanticOperationInput {
   readonly userId: string;
   readonly operationKey: string;
-  readonly completedAt: string;
 }
 
 export interface MarkSemanticOperationSucceededInput extends CompleteSemanticOperationInput {
@@ -134,12 +133,12 @@ export class PostgresSemanticOperationRepository {
       `update public.semantic_operations
        set status = 'SUCCEEDED',
            result = $3,
-           completed_at = $4
+           completed_at = clock_timestamp()
        where user_id = $1
          and operation_key = $2
          and status = 'PENDING'
        returning ${semanticOperationResultColumns}`,
-      [input.userId, input.operationKey, input.result, input.completedAt],
+      [input.userId, input.operationKey, input.result],
     );
     return this.resolveCompletion(input, result.rows);
   }
@@ -152,12 +151,12 @@ export class PostgresSemanticOperationRepository {
       `update public.semantic_operations
        set status = 'FAILED',
            error = $3,
-           completed_at = $4
+           completed_at = clock_timestamp()
        where user_id = $1
          and operation_key = $2
          and status = 'PENDING'
        returning ${semanticOperationResultColumns}`,
-      [input.userId, input.operationKey, input.error, input.completedAt],
+      [input.userId, input.operationKey, input.error],
     );
     return this.resolveCompletion(input, result.rows);
   }

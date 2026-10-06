@@ -1,5 +1,5 @@
 import { createFoodDay } from "@cal-calc/domain";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { toFoodDayRow } from "../mapping.js";
 import type { SemanticOperationRow } from "../types.js";
@@ -70,75 +70,63 @@ class ScriptedTransactionRunner implements PostgresTransactionRunner {
 }
 
 describe("createFoodDayExactlyOnce", () => {
-  it("claims, creates once, and completes on one executor with post-create application time", async () => {
+  it("claims, creates once, and completes on one executor using database time", async () => {
     const input = workflowInput();
-    const completedAt = "2026-09-06T00:00:01.000Z";
     const runner = new ScriptedTransactionRunner([
       [operationRow()],
-      () => {
-        vi.setSystemTime(completedAt);
-        return [foodDayRow(input)];
-      },
-      [succeededRow(resultJson, completedAt)],
+      [foodDayRow(input)],
+      [succeededRow(resultJson)],
     ]);
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(timestamp);
-    try {
-      const result = await createFoodDayExactlyOnce(runner, input);
+    const result = await createFoodDayExactlyOnce(runner, input);
 
-      expect(result.disposition).toBe("CREATED");
-      expect(result.foodDay.foodDay).toEqual(input.foodDay);
-      expect(result.foodDay).toMatchObject({
-        userId,
-        completeness: input.completeness,
-        localDate: input.localDate,
-        timezone: input.timezone,
-      });
-      expect(result.operation).toMatchObject({
-        id: operationId,
-        status: "SUCCEEDED",
-        result: resultJson,
-        completedAt,
-      });
-      expect(runner).toMatchObject({ attempts: 1, commits: 1, rollbacks: 0 });
-      expect(runner.executor.calls).toHaveLength(3);
-      const [claim, creation, completion] = runner.executor.calls;
-      expect(normalizeSql(claim?.queryText)).toMatch(
-        /^insert into public.semantic_operations /,
-      );
-      expect(claim?.values).toEqual([
-        operationId,
-        userId,
-        operationKey,
-        fingerprint,
-      ]);
-      expect(normalizeSql(creation?.queryText)).toMatch(
-        /^insert into public.food_days /,
-      );
-      expect(creation?.values).toEqual([
-        foodDayId,
-        userId,
-        "OPEN",
-        "PARTIAL",
-        "2100.125",
-        "120.005",
-        "2400.75",
-        "goal-version-7",
-        "2026-09-05",
-        "Asia/Calcutta",
-      ]);
-      expect(normalizeSql(completion?.queryText)).toMatch(
-        /^update public.semantic_operations /,
-      );
-      expect(completion?.values).toEqual([
-        userId,
-        operationKey,
-        resultJson,
-        completedAt,
-      ]);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(result.disposition).toBe("CREATED");
+    expect(result.foodDay.foodDay).toEqual(input.foodDay);
+    expect(result.foodDay).toMatchObject({
+      userId,
+      completeness: input.completeness,
+      localDate: input.localDate,
+      timezone: input.timezone,
+    });
+    expect(result.operation).toMatchObject({
+      id: operationId,
+      status: "SUCCEEDED",
+      result: resultJson,
+      completedAt: timestamp,
+    });
+    expect(runner).toMatchObject({ attempts: 1, commits: 1, rollbacks: 0 });
+    expect(runner.executor.calls).toHaveLength(3);
+    const [claim, creation, completion] = runner.executor.calls;
+    expect(normalizeSql(claim?.queryText)).toMatch(
+      /^insert into public.semantic_operations /,
+    );
+    expect(claim?.values).toEqual([
+      operationId,
+      userId,
+      operationKey,
+      fingerprint,
+    ]);
+    expect(normalizeSql(creation?.queryText)).toMatch(
+      /^insert into public.food_days /,
+    );
+    expect(creation?.values).toEqual([
+      foodDayId,
+      userId,
+      "OPEN",
+      "PARTIAL",
+      "2100.125",
+      "120.005",
+      "2400.75",
+      "goal-version-7",
+      "2026-09-05",
+      "Asia/Calcutta",
+    ]);
+    expect(normalizeSql(completion?.queryText)).toMatch(
+      /^update public.semantic_operations /,
+    );
+    expect(completion?.values).toEqual([userId, operationKey, resultJson]);
+    expect(normalizeSql(completion?.queryText)).toContain(
+      "completed_at = clock_timestamp()",
+    );
   });
 
   it("replays the current canonical FoodDay without creating or completing again", async () => {

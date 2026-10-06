@@ -100,7 +100,6 @@ export async function setFoodDayCompletenessExactlyOnce(
       userId: input.userId,
       operationKey: input.operationKey,
       result,
-      completedAt: new Date().toISOString(),
     });
     return { disposition: "APPLIED", foodDay, operation };
   });

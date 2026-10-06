@@ -6,6 +6,16 @@ export {
   toFoodEntryRow,
 } from "./mapping.js";
 export {
+  PostgresBodyWeightRepository,
+  type CreateBodyWeightRecord,
+} from "./postgres/body-weight-repository.js";
+export {
+  createBodyWeightExactlyOnce,
+  CreateBodyWeightIntegrityError,
+  type CreateBodyWeightExactlyOnceInput,
+  type CreateBodyWeightExactlyOnceResult,
+} from "./postgres/create-body-weight-exactly-once.js";
+export {
   createFoodDayExactlyOnce,
   CreateFoodDayIntegrityError,
   type CreateFoodDayExactlyOnceInput,
@@ -80,6 +90,8 @@ export {
 } from "./resolve-food-day-target.js";
 export { foodDayCompletenessValues } from "./types.js";
 export type {
+  BodyWeightEntryRow,
+  PersistedBodyWeightEntry,
   ConsumedTimePrecision,
   FoodDayCompleteness,
   FoodDayTurnResultRow,
