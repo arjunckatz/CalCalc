@@ -383,6 +383,13 @@ Responses calls. It is excluded from normal tests/CI. Deterministic executor dat
 eligibility does not establish semantic clause association; that is what this
 live eval examines.
 
+The internal `getBodyWeightHistory` application query reads owner-scoped canonical
+observations with a fixed 30-observation recent bound. `latestMeasurementDate`
+is the maximum observation local date; `latestDateObservations` retains every
+observation on that date, including multiple same-day weigh-ins. `createdAt`
+only breaks presentation ties and is not measurement time. This is not yet an
+HTTP or conversational read tool, a current-weight field, or trend math.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`

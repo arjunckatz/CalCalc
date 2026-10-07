@@ -32,6 +32,14 @@ export {
   type ListFoodEntriesForFoodDayResult,
 } from "./queries/list-food-entries-for-food-day.js";
 export {
+  getBodyWeightHistory,
+  BODY_WEIGHT_RECENT_HISTORY_LIMIT,
+  type BodyWeightHistoryObservation,
+  type GetBodyWeightHistoryDependencies,
+  type GetBodyWeightHistoryInput,
+  type GetBodyWeightHistoryResult,
+} from "./queries/get-body-weight-history.js";
+export {
   buildFoodDayState,
   type BuildFoodDayStateInput,
   type FoodDayState,

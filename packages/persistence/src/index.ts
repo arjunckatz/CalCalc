@@ -7,6 +7,7 @@ export {
 } from "./mapping.js";
 export {
   PostgresBodyWeightRepository,
+  type BodyWeightHistoryRows,
   type CreateBodyWeightRecord,
 } from "./postgres/body-weight-repository.js";
 export {

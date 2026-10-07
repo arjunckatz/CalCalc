@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
+import { createBodyWeightEntry } from "@cal-calc/domain";
 import {
   PostgresBodyWeightRepository,
   SemanticOperationIdempotencyConflictError,
@@ -14,6 +15,7 @@ import {
 } from "../index.js";
 import { logBodyWeightMutation } from "../mutations/log-body-weight.js";
 import { parseIdempotencyKey } from "../mutations/mutation-identity.js";
+import { getBodyWeightHistory } from "../queries/get-body-weight-history.js";
 
 const supabaseUrl = requiredEnvironment("SUPABASE_URL");
 const publishableKey = requiredEnvironment("SUPABASE_PUBLISHABLE_KEY");
@@ -227,6 +229,93 @@ describe("real owned body-weight observation and exactly-once mutation", () => {
         ),
       ).rejects.toMatchObject({ code: "23514" });
     }
+  });
+
+  it("reads bounded owned history while retaining every observation on the latest measurement date", async () => {
+    const owner = await createAccount("history-owner");
+    const other = await createAccount("history-other");
+    const repository = new PostgresBodyWeightRepository(runtime.pool);
+    const latestIds: string[] = [];
+    for (let index = 1; index <= 30; index += 1) {
+      const entry = createBodyWeightEntry({
+        id: randomUUID(),
+        localDate: "2026-10-06",
+        sourceValue: `80.${String(index).padStart(2, "0")}`,
+        sourceUnit: "KG",
+      });
+      latestIds.push(entry.id);
+      await repository.create({ userId: owner.id, entry });
+    }
+    const pounds = createBodyWeightEntry({
+      id: randomUUID(),
+      localDate: "2026-10-06",
+      sourceValue: "178.125",
+      sourceUnit: "LB",
+    });
+    latestIds.push(pounds.id);
+    await repository.create({ userId: owner.id, entry: pounds });
+
+    // This later-ingested backfill must not become the latest measurement date.
+    const backfill = createBodyWeightEntry({
+      id: randomUUID(),
+      localDate: "2026-10-01",
+      sourceValue: "79.8",
+      sourceUnit: "KG",
+    });
+    await repository.create({ userId: owner.id, entry: backfill });
+    const otherEntry = createBodyWeightEntry({
+      id: randomUUID(),
+      localDate: "2026-10-07",
+      sourceValue: "90.1",
+      sourceUnit: "KG",
+    });
+    await repository.create({ userId: other.id, entry: otherEntry });
+
+    const ownerHistory = await getBodyWeightHistory(
+      { bodyWeights: repository },
+      { trustedUserId: owner.id },
+    );
+    expect(ownerHistory.latestMeasurementDate).toBe("2026-10-06");
+    expect(ownerHistory.recentObservations).toHaveLength(30);
+    expect(ownerHistory.latestDateObservations).toHaveLength(31);
+    expect(
+      ownerHistory.latestDateObservations.map(({ id }) => id).sort(),
+    ).toEqual(latestIds.sort());
+    expect(
+      ownerHistory.recentObservations.every(
+        ({ localDate }) => localDate === "2026-10-06",
+      ),
+    ).toBe(true);
+    expect(ownerHistory.latestDateObservations).toContainEqual({
+      ...pounds,
+      createdAt: expect.any(String),
+    });
+    expect(
+      ownerHistory.latestDateObservations.every(
+        ({ id }) => id !== otherEntry.id && id !== backfill.id,
+      ),
+    ).toBe(true);
+
+    const expectedOrder = await runtime.pool.query(
+      `select id from public.body_weight_entries
+       where user_id = $1
+       order by local_date desc, created_at desc, id desc
+       limit 30`,
+      [owner.id],
+    );
+    expect(ownerHistory.recentObservations.map(({ id }) => id)).toEqual(
+      expectedOrder.rows.map((row) => row.id),
+    );
+    const otherHistory = await getBodyWeightHistory(
+      { bodyWeights: repository },
+      { trustedUserId: other.id },
+    );
+    expect(otherHistory).toMatchObject({
+      latestMeasurementDate: "2026-10-07",
+      recentObservations: [{ id: otherEntry.id }],
+      latestDateObservations: [{ id: otherEntry.id }],
+    });
+    expect(otherHistory.recentObservations).toHaveLength(1);
   });
 });
 

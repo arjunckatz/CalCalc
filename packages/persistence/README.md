@@ -26,6 +26,15 @@ The numeric-transport and invariant tests do not by themselves prove repository
 behavior. PostgREST/Supabase-client numeric transport is not covered yet and
 must be verified separately.
 
+The body-weight history repository reads canonical observations for one owner in
+one PostgreSQL snapshot. Its recent window is bounded at 30 observations and
+ordered by measurement `local_date` descending, then ingestion `created_at` and
+ID as deterministic tie-breakers. A separate latest-date subset includes every
+observation on the maximum measurement date, even when that subset exceeds 30.
+`created_at` is not measurement time; the read preserves exact source and kg
+decimal strings through existing domain hydration. No singleton current/latest
+weight or trend calculation is inferred.
+
 The separate `test:integration:rls` script verifies Supabase Auth and RLS with
 two temporary, independently authenticated CAL CALC accounts. One account
 represents one human user; account sharing and sub-users are not supported. The
