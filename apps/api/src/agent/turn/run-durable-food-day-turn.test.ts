@@ -3,6 +3,7 @@ import {
   type CompletedFoodDayTurnStore,
   type PersistedFoodDayTurnResult,
 } from "@cal-calc/persistence";
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseIdempotencyKey } from "../../mutations/mutation-identity.js";
@@ -96,6 +97,89 @@ describe("runDurableFoodDayTurn", () => {
     expect(saveCompleted).not.toHaveBeenCalled();
   });
 
+  it("replays the same dated request without invoking the model or tools", async () => {
+    const dated = {
+      ...input,
+      userMessage: "I weighed 80 kg today.",
+      calendarContext: { currentLocalDate: "2026-10-06" },
+    };
+    const identity = deriveFoodDayTurnIdentity(dated);
+    findCompleted.mockResolvedValueOnce({
+      ...stored,
+      requestFingerprint: identity.requestFingerprint,
+      userMessage: dated.userMessage,
+    });
+    await expect(runDurableFoodDayTurn(dependencies(), dated)).resolves.toEqual(
+      { response: "Stored response." },
+    );
+    expect(findCompleted).toHaveBeenCalledExactlyOnceWith({
+      userId: identity.canonicalUserId,
+      foodDayId: identity.canonicalFoodDayId,
+      turnKey: identity.turnKey,
+      requestFingerprint: identity.requestFingerprint,
+    });
+    expect(runTurn).not.toHaveBeenCalled();
+    expect(loadRecentTranscript).not.toHaveBeenCalled();
+    expect(saveCompleted).not.toHaveBeenCalled();
+  });
+
+  it("conflicts on a changed calendar date before any model or tool work", async () => {
+    const original = {
+      ...input,
+      userMessage: "I weighed 80 kg today.",
+      calendarContext: { currentLocalDate: "2026-10-06" },
+    };
+    const changed = {
+      ...original,
+      calendarContext: { currentLocalDate: "2026-10-07" },
+    };
+    const firstIdentity = deriveFoodDayTurnIdentity(original);
+    const changedIdentity = deriveFoodDayTurnIdentity(changed);
+    expect(changedIdentity.turnKey).toBe(firstIdentity.turnKey);
+    expect(changedIdentity.requestFingerprint).not.toBe(
+      firstIdentity.requestFingerprint,
+    );
+    findCompleted.mockRejectedValueOnce(
+      new FoodDayTurnIdempotencyConflictError(
+        changedIdentity.turnKey,
+        firstIdentity.requestFingerprint,
+        changedIdentity.requestFingerprint,
+      ),
+    );
+    await expect(
+      runDurableFoodDayTurn(dependencies(), changed),
+    ).rejects.toBeInstanceOf(FoodDayTurnIdempotencyConflictError);
+    expect(findCompleted).toHaveBeenCalledExactlyOnceWith({
+      userId: changedIdentity.canonicalUserId,
+      foodDayId: changedIdentity.canonicalFoodDayId,
+      turnKey: changedIdentity.turnKey,
+      requestFingerprint: changedIdentity.requestFingerprint,
+    });
+    expect(runTurn).not.toHaveBeenCalled();
+    expect(loadRecentTranscript).not.toHaveBeenCalled();
+    expect(saveCompleted).not.toHaveBeenCalled();
+  });
+
+  it("keeps the accepted date fixed across lookup and execution", async () => {
+    const dated = {
+      ...input,
+      calendarContext: { currentLocalDate: "2026-10-06" },
+    };
+    const identity = deriveFoodDayTurnIdentity(dated);
+    findCompleted.mockImplementationOnce(async () => {
+      dated.calendarContext.currentLocalDate = "2026-10-07";
+      return null;
+    });
+    await runDurableFoodDayTurn(dependencies(), dated);
+    expect(findCompleted.mock.calls[0]?.[0].requestFingerprint).toBe(
+      identity.requestFingerprint,
+    );
+    expect(runTurn).toHaveBeenCalledExactlyOnceWith({
+      ...dated,
+      calendarContext: { currentLocalDate: "2026-10-06" },
+    });
+  });
+
   it("returns the first persisted response when a concurrent save loses", async () => {
     saveCompleted.mockResolvedValueOnce({
       disposition: "EXISTING",
@@ -177,6 +261,36 @@ describe("runDurableFoodDayTurn", () => {
 });
 
 describe("deriveFoodDayTurnIdentity", () => {
+  it("preserves the legacy request fingerprint when calendar context is omitted", () => {
+    const expected = createHash("sha256")
+      .update(
+        JSON.stringify([
+          "calcalc:food-day-turn:request",
+          "v1",
+          input.trustedUserId,
+          input.foodDayId,
+          input.userMessage,
+        ]),
+        "utf8",
+      )
+      .digest("hex");
+    expect(deriveFoodDayTurnIdentity(input).requestFingerprint).toBe(expected);
+  });
+
+  it.each(["2026-02-30", "2026-2-05", " 2026-10-06", "2026-10-06T00:00:00Z"])(
+    "rejects malformed calendar context %s before durable lookup",
+    (currentLocalDate) => {
+      expect(() =>
+        deriveFoodDayTurnIdentity({
+          ...input,
+          calendarContext: { currentLocalDate },
+        }),
+      ).toThrowError(
+        expect.objectContaining({ reason: "INVALID_CALENDAR_CONTEXT" }),
+      );
+    },
+  );
+
   it("canonicalizes UUID text before deriving the same logical identity", () => {
     const upper = deriveFoodDayTurnIdentity({
       ...input,

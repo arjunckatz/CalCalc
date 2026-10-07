@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 
+import { isCanonicalLocalDate } from "../calendar/local-date.js";
 import type { FoodDayTurnRunner } from "../agent/turn/create-food-day-turn-runner.js";
 import type { AuthenticatedIdentity } from "../auth/authorization.js";
 import { readIdempotencyKey } from "./idempotency-key.js";
@@ -34,12 +35,17 @@ export function foodDayTurnHandler(runTurn: FoodDayTurnRunner) {
   ) => {
     const foodDayId = parseFoodDayId(request.params.foodDayId);
     const turnIdempotencyKey = readIdempotencyKey(request);
-    const userMessage = parseMessage(request.body);
+    const { message: userMessage, currentLocalDate } = parseTurnBody(
+      request.body,
+    );
     const result = await runTurn({
       trustedUserId: identity.userId,
       foodDayId,
       turnIdempotencyKey,
       userMessage,
+      ...(currentLocalDate === undefined
+        ? {}
+        : { calendarContext: { currentLocalDate } }),
     });
     return reply.code(200).send({ response: result.response });
   };
@@ -56,7 +62,10 @@ function parseFoodDayId(value: unknown): string {
   return value;
 }
 
-function parseMessage(input: unknown): string {
+function parseTurnBody(input: unknown): {
+  readonly message: string;
+  readonly currentLocalDate?: string;
+} {
   if (
     input === null ||
     typeof input !== "object" ||
@@ -67,7 +76,11 @@ function parseMessage(input: unknown): string {
     throw new InvalidFoodDayTurnRequestError("INVALID_BODY");
   }
   const keys = Reflect.ownKeys(input);
-  if (keys.length !== 1 || keys[0] !== "message") {
+  if (
+    !keys.includes("message") ||
+    keys.length > 2 ||
+    keys.some((key) => key !== "message" && key !== "currentLocalDate")
+  ) {
     throw new InvalidFoodDayTurnRequestError("INVALID_BODY");
   }
   const descriptor = Object.getOwnPropertyDescriptor(input, "message");
@@ -79,5 +92,18 @@ function parseMessage(input: unknown): string {
   ) {
     throw new InvalidFoodDayTurnRequestError("INVALID_BODY");
   }
-  return message;
+  if (!keys.includes("currentLocalDate")) return { message };
+  const dateDescriptor = Object.getOwnPropertyDescriptor(
+    input,
+    "currentLocalDate",
+  );
+  const currentLocalDate =
+    dateDescriptor && "value" in dateDescriptor ? dateDescriptor.value : null;
+  if (
+    dateDescriptor?.enumerable !== true ||
+    !isCanonicalLocalDate(currentLocalDate)
+  ) {
+    throw new InvalidFoodDayTurnRequestError("INVALID_BODY");
+  }
+  return { message, currentLocalDate };
 }

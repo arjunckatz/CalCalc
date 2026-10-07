@@ -228,6 +228,35 @@ describe("OpenAI FoodDay decision binding", () => {
     expect(request.instructions).not.toContain("I had yogurt");
   });
 
+  it.each([
+    { label: "without transcript", transcript: emptyTranscript },
+    { label: "with transcript", transcript: recentTranscript },
+  ])(
+    "supplies accepted calendar context as developer decision data $label",
+    async ({ transcript }) => {
+      const { create, model } = setup();
+      await model.decide({
+        userMessage: "I weighed 80 kg today.",
+        state,
+        recentTranscript: transcript,
+        calendarContext: { currentLocalDate: "2026-10-06" },
+      });
+      const input = requestAt(create).input as {
+        role: string;
+        content: string;
+      }[];
+      expect(input[0]).toEqual({
+        role: "developer",
+        content: `${JSON.stringify({ canonicalFoodDayState: state })}\nCURRENT CALENDAR CONTEXT:\n${JSON.stringify({ currentLocalDate: "2026-10-06" })}`,
+      });
+      expect(input.at(-1)).toEqual({
+        role: "user",
+        content: "I weighed 80 kg today.",
+      });
+      expect(state.foodDay).not.toHaveProperty("currentLocalDate");
+    },
+  );
+
   it("does not serialize additional runtime fields outside FoodDayState", async () => {
     const { create, model } = setup();
     const extended = { ...state, secret: "do-not-send" };
@@ -455,6 +484,17 @@ describe("OpenAI FoodDay decision binding", () => {
 });
 
 describe("OpenAI FoodDay finalization binding", () => {
+  it("finalizes from authoritative tool results without recomputing calendar context", async () => {
+    const { create, model } = setup();
+    await model.finalize({
+      ...finalizationInput("I weighed 80 kg today."),
+      calendarContext: { currentLocalDate: "2026-10-06" },
+    });
+    const input = JSON.parse(requestAt(create).input as string);
+    expect(input).not.toHaveProperty("calendarContext");
+    expect(input.toolResults).toEqual(toolResults);
+  });
+
   it("makes a new response request with the original STATE, message, and rich tool results", async () => {
     const { create, model } = setup();
     await model.finalize(finalizationInput("Add apple"));

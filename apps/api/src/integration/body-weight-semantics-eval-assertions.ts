@@ -1,4 +1,4 @@
-/** Eval-only, bounded English checks for these seven fixtures; never production policy. */
+/** Eval-only, bounded English checks for body-weight fixtures; never production policy. */
 
 import type { FoodDayModelDecision } from "../agent/turn/food-day-turn-types.js";
 import { parseFoodDayToolCall } from "../agent/tools/food-day-tools.js";
@@ -35,7 +35,7 @@ function normalizeApostrophes(text: string): string {
 function clauses(text: string): string[] {
   return normalizeApostrophes(text)
     .split(
-      /[!?;]\s*|\.(?=\s|$)\s*|:\s*(?=(?:I|we|you|it|that|this|logged|recorded|updated|corrected|changed|removed|added)\b)|,\s*(?=(?:I|we)(?:'ll|\s+(?:will|have|logged|recorded|saved|added|updated|corrected|changed|removed|fixed|edited|used))\b)|\s+\b(?:but|however|though|yet|so|instead)\b\s+|\s*[—–]\s*/i,
+      /[!?;]\s*|\.(?=\s|$)\s*|:\s*(?=(?:I|we|you|it|that|this|for now|logged|recorded|updated|corrected|changed|removed|added)\b)|,\s*(?=for now\b|(?:I|we)(?:'ll|\s+(?:will|have|logged|recorded|saved|added|updated|corrected|changed|removed|fixed|edited|used))\b)|\s+\b(?:but|however|though|yet|so|instead)\b\s+|\s*[—–]\s*/i,
     )
     .map((part) => part.trim())
     .filter(Boolean);
@@ -137,6 +137,38 @@ export function isDateClarification(text: string): boolean {
     uncertain &&
     !hasAffirmativeMutationClaim(text) &&
     !hasAffirmativeAppointmentDateAssignment(text)
+  );
+}
+
+/** A clarification cannot also assign a calendar date in a later clause. */
+export function isSafeDateClarification(text: string): boolean {
+  // These question/conditional forms are requests for a date, not claims that
+  // a date was chosen or a weigh-in was already logged.
+  const evaluated = normalizeApostrophes(text)
+    .replace(
+      /\b((?:what|which)\s+(?:(?:calendar|measurement)\s+)?date\s+should\s+I)\s+use\b/gi,
+      "$1 choose",
+    )
+    .replace(
+      /\b(?:you'd|you would)\s+like(?:\s+(?:it|that))?\s+logged\b/gi,
+      "you want to log",
+    );
+  const clarification =
+    isDateClarification(evaluated) ||
+    /\bwhen\s+did\s+(?:you|I|we|they)\s+weigh\b/i.test(evaluated) ||
+    /\b(?:can't|cannot|won't|will not|unable to)\b.{0,50}\b(?:resolve|infer|assume|determine)\b.{0,70}\b(?:yesterday|today)\b/i.test(
+      evaluated,
+    );
+  const dateAssignment =
+    /\b(?:it(?:'s|\s+(?:is|was))|yesterday\s+(?:is|was|means)|(?:the\s+)?date\s+(?:is|was)|(?:treat|treated|take|took|interpret|interpreted|count|counted)\b.{0,40}\bas)\s+(?:\d{4}-\d{2}-\d{2}|today|yesterday|oct(?:ober)?\s+\d{1,2})\b/i;
+  return (
+    clarification &&
+    !hasAffirmativeMutationClaim(evaluated) &&
+    !hasAffirmativeAppointmentDateAssignment(evaluated) &&
+    !clauses(evaluated).some((clause) => {
+      const match = dateAssignment.exec(clause);
+      return match !== null && !negation.test(clause.slice(0, match.index));
+    })
   );
 }
 

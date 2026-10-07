@@ -3,11 +3,17 @@ import type { IdempotencyKey } from "../../mutations/mutation-identity.js";
 import type { FoodDayToolResult } from "../tools/execute-food-day-tool.js";
 
 /** Identity, target, and retry identity are supplied by trusted orchestration. */
+export interface FoodDayCalendarContext {
+  /** Client-resolved civil date for this turn; not FoodDay state or a location proof. */
+  readonly currentLocalDate: string;
+}
+
 export interface FoodDayTurnInput {
   readonly trustedUserId: string;
   readonly foodDayId: string;
   readonly turnIdempotencyKey: IdempotencyKey;
   readonly userMessage: string;
+  readonly calendarContext?: FoodDayCalendarContext;
 }
 
 export interface FoodDayTurnTranscriptItem {
@@ -19,6 +25,7 @@ export interface FoodDayModelDecisionInput {
   readonly userMessage: string;
   readonly state: FoodDayState;
   readonly recentTranscript: readonly FoodDayTurnTranscriptItem[];
+  readonly calendarContext?: FoodDayCalendarContext;
 }
 
 export type FoodDayModelDecision =

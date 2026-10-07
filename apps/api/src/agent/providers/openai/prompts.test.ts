@@ -30,16 +30,31 @@ describe("FoodDay target-progress instructions", () => {
 });
 
 describe("body-weight observation policy", () => {
-  it("requires an actual observation, explicit unit and absolute current-message date", () => {
+  it("requires an actual observation, explicit unit and supported current-message date", () => {
     expect(decisionInstructions).toContain("actual reported weigh-in");
     expect(decisionInstructions).toContain(
-      "explicit YYYY-MM-DD measurement date and an explicit KG or LB unit in the current user message",
+      "explicit KG or LB unit and supported date evidence in the current user message",
+    );
+    expect(decisionInstructions).toContain(
+      "An explicit YYYY-MM-DD measurement date works without calendar context",
+    );
+    expect(decisionInstructions).toContain(
+      'resolve standalone "today" to that date and standalone "yesterday" to the preceding Gregorian calendar date',
+    );
+    expect(decisionInstructions).toContain(
+      "Without it, ask for an absolute date when the user says today or yesterday",
+    );
+    expect(decisionInstructions).toContain(
+      "Only today and yesterday are supported relative dates",
+    );
+    expect(decisionInstructions).toContain(
+      "An omitted date does not default to currentLocalDate",
     );
     expect(decisionInstructions).toContain(
       "FoodDay.localDate is not the user's current civil date",
     );
     expect(decisionInstructions).toContain(
-      "today, yesterday, or an omitted date",
+      "do not use it, server time, or transcript to resolve a relative or omitted date",
     );
     expect(decisionInstructions).toContain(
       "goals, hypotheticals, aspirations, or vague estimates",
@@ -69,7 +84,7 @@ describe("body-weight observation policy", () => {
       "there is no canonical weight-history read path",
     );
     expect(decisionInstructions).toContain(
-      "independently affirms an actual measurement with explicit date, value, and unit, use LOG_BODY_WEIGHT for that affirmed observation",
+      "independently affirms an actual measurement with supported date, value, and unit, use LOG_BODY_WEIGHT for that affirmed observation",
     );
     expect(decisionInstructions).toContain(
       '"I wasn\'t 80 kg on 2026-10-05; I was 80 kg on 2026-10-06" means call LOG_BODY_WEIGHT with localDate 2026-10-06, sourceValue 80, sourceUnit KG; it is not a correction',
@@ -97,5 +112,8 @@ describe("body-weight observation policy", () => {
     );
     expect(decisionInstructions).toContain("correction is not supported yet");
     expect(decisionInstructions).toContain("never append a replacement row");
+    expect(decisionInstructions).toContain(
+      "Relative-date resolution does not make an existing-weigh-in correction loggable",
+    );
   });
 });

@@ -4,6 +4,11 @@ import type {
 } from "@cal-calc/persistence";
 
 import {
+  isCanonicalLocalDate,
+  previousCalendarDate,
+} from "../../calendar/local-date.js";
+import type { FoodDayCalendarContext } from "../turn/food-day-turn-types.js";
+import {
   changeFoodEntryStatusMutation,
   type ChangeFoodEntryStatusMutationResult,
 } from "../../mutations/change-food-entry-status.js";
@@ -36,8 +41,9 @@ export interface TrustedFoodDayToolContext {
   readonly idempotencyKey: IdempotencyKey;
   /** Completeness from the fresh canonical STATE shown to the model. */
   readonly stateCompleteness: FoodDayCompleteness;
-  /** Exact current turn text; its explicit date is required for weight logging. */
+  /** Exact current turn text; date/unit evidence must come from this message. */
   readonly userMessage: string;
+  readonly calendarContext?: FoodDayCalendarContext;
 }
 
 export type FoodDayToolResult =
@@ -133,9 +139,10 @@ export async function executeFoodDayTool(
       };
     case "LOG_BODY_WEIGHT":
       if (
-        !mentionsExplicitDate(
+        !mentionsSupportedDate(
           trustedContext.userMessage,
           call.arguments.localDate,
+          trustedContext.calendarContext,
         ) ||
         !mentionsExplicitSourceUnit(
           trustedContext.userMessage,
@@ -154,6 +161,22 @@ export async function executeFoodDayTool(
         }),
       };
   }
+}
+
+function mentionsSupportedDate(
+  message: string,
+  localDate: string,
+  calendarContext: FoodDayCalendarContext | undefined,
+): boolean {
+  if (mentionsExplicitDate(message, localDate)) return true;
+  const currentLocalDate = calendarContext?.currentLocalDate;
+  if (!isCanonicalLocalDate(currentLocalDate)) return false;
+  return (
+    (/(?:^|[^\p{L}\p{N}_-])today(?![\p{L}\p{N}_-])/iu.test(message) &&
+      localDate === currentLocalDate) ||
+    (/(?:^|[^\p{L}\p{N}_-])yesterday(?![\p{L}\p{N}_-])/iu.test(message) &&
+      localDate === previousCalendarDate(currentLocalDate))
+  );
 }
 
 function mentionsExplicitDate(message: string, localDate: string): boolean {

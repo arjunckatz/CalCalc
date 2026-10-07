@@ -19,7 +19,8 @@
     "eval:openai:food-day-new-entry-semantics": "vitest run src/integration/openai-food-day-new-entry-semantics.eval.integration.test.ts --retry 0",
     "eval:openai:food-day-completeness-semantics": "vitest run src/integration/openai-food-day-completeness-semantics.eval.integration.test.ts --retry 0",
     "eval:openai:food-day-target-progress-semantics": "vitest run src/integration/openai-food-day-target-progress-semantics.eval.integration.test.ts --retry 0",
-    "eval:openai:body-weight-semantics": "vitest run src/integration/openai-body-weight-semantics.eval.integration.test.ts --retry 0"
+    "eval:openai:body-weight-semantics": "vitest run src/integration/openai-body-weight-semantics.eval.integration.test.ts --retry 0",
+    "eval:openai:body-weight-relative-date-semantics": "vitest run src/integration/openai-body-weight-relative-date-semantics.eval.integration.test.ts --retry 0"
   },
   "dependencies": {
     "@cal-calc/config": "workspace:*",

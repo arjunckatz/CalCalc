@@ -130,6 +130,53 @@ describe("POST /v1/food-days/:foodDayId/turns", () => {
     expect(postgres.query).not.toHaveBeenCalled();
   });
 
+  it("passes an accepted client calendar date separately from FoodDay state", async () => {
+    const { app } = fixture();
+    const response = await post(app, {
+      body: {
+        message: "I weighed 80 kg today.",
+        currentLocalDate: "2026-10-06",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(runTurn).toHaveBeenCalledExactlyOnceWith({
+      trustedUserId: userId,
+      foodDayId,
+      turnIdempotencyKey: "turn-retry-1",
+      userMessage: "I weighed 80 kg today.",
+      calendarContext: { currentLocalDate: "2026-10-06" },
+    });
+  });
+
+  it.each([
+    "2026-2-05",
+    "2026-02-5",
+    "2026-02-30",
+    "2026-13-01",
+    "2026-00-01",
+    " 2026-10-06",
+    "2026-10-06 ",
+    "2026-10-06T00:00:00Z",
+    null,
+    20261006,
+  ])(
+    "rejects malformed currentLocalDate %j before agent execution",
+    async (date) => {
+      const { app } = fixture();
+      const response = await post(app, {
+        body: { message: "I weighed 80 kg today.", currentLocalDate: date },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({
+        error: {
+          code: "INVALID_FOOD_DAY_TURN",
+          message: "Invalid FoodDay turn request.",
+        },
+      });
+      expect(runTurn).not.toHaveBeenCalled();
+    },
+  );
+
   it("projects a tool-based turn to response only", async () => {
     const { app } = fixture();
     runTurn.mockResolvedValueOnce({
@@ -171,6 +218,17 @@ describe("POST /v1/food-days/:foodDayId/turns", () => {
     expect(response.json()).toEqual({
       error: { code: "UNAUTHENTICATED", message: "Authentication required." },
     });
+    expect(authVerifier.verifyAccessToken).not.toHaveBeenCalled();
+    expect(runTurn).not.toHaveBeenCalled();
+  });
+
+  it("authenticates before checking malformed calendar context", async () => {
+    const { app, authVerifier } = fixture();
+    const response = await post(app, {
+      body: { message: "Today", currentLocalDate: "2026-02-30" },
+      requestHeaders: { "idempotency-key": "turn-retry-1" },
+    });
+    expect(response.statusCode).toBe(401);
     expect(authVerifier.verifyAccessToken).not.toHaveBeenCalled();
     expect(runTurn).not.toHaveBeenCalled();
   });

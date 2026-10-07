@@ -105,6 +105,27 @@ const statusCall = {
   },
 };
 
+function weightCall(localDate: string, sourceUnit: "KG" | "LB" = "KG") {
+  return {
+    name: "LOG_BODY_WEIGHT",
+    arguments: { localDate, sourceValue: "80", sourceUnit },
+  };
+}
+
+function mockWeightResult(localDate: string) {
+  weightMutation.mockResolvedValueOnce({
+    disposition: "CREATED",
+    weightEntry: {
+      id: "40000000-0000-4000-8000-000000000001",
+      localDate,
+      sourceValue: "80",
+      sourceUnit: "KG",
+      weightKg: "80",
+      createdAt: "2026-10-06T12:00:00Z",
+    },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -465,6 +486,165 @@ describe("executeFoodDayTool", () => {
       weightMutation.mock.calls[1]?.[1],
     );
     expect(replay).toEqual({ name: "LOG_BODY_WEIGHT", result: authoritative });
+  });
+
+  it.each(["today", "Today.", "(today)", '"today"'])(
+    "accepts standalone %s only at currentLocalDate",
+    async (word) => {
+      mockWeightResult("2026-10-06");
+      await executeFoodDayTool(
+        dependencies,
+        {
+          ...trustedContext,
+          userMessage: `I weighed 80 kg ${word}`,
+          calendarContext: { currentLocalDate: "2026-10-06" },
+        },
+        weightCall("2026-10-06"),
+      );
+      expect(weightMutation).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    ["2026-10-06", "2026-10-05"],
+    ["2026-03-01", "2026-02-28"],
+    ["2024-03-01", "2024-02-29"],
+    ["2026-01-01", "2025-12-31"],
+  ])(
+    "accepts yesterday across Gregorian boundary %s",
+    async (today, yesterday) => {
+      mockWeightResult(yesterday);
+      await executeFoodDayTool(
+        dependencies,
+        {
+          ...trustedContext,
+          userMessage: "Yesterday, I weighed 80 kg.",
+          calendarContext: { currentLocalDate: today },
+        },
+        weightCall(yesterday),
+      );
+      expect(weightMutation).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    ["I weighed 80 kg today.", "2026-10-05"],
+    ["Yesterday I weighed 80 kg.", "2026-10-06"],
+    ["I weighed 80 kg today.", "2026-10-07"],
+    ["I weighed 80 kg todayish.", "2026-10-06"],
+    ["I weighed 80 kg notyesterday.", "2026-10-05"],
+    ["I weighed 80 kg yesterdays.", "2026-10-05"],
+    ["I weighed 80 kg.", "2026-10-06"],
+    ["I weighed 80 kg this morning.", "2026-10-06"],
+    ["I weighed 80 today.", "2026-10-06"],
+    ["Yesterday I was 178.", "2026-10-05"],
+    ["I weighed 80 lb today.", "2026-10-06"],
+  ])(
+    "rejects unsupported date or missing unit evidence: %s",
+    async (userMessage, localDate) => {
+      await expect(
+        executeFoodDayTool(
+          dependencies,
+          {
+            ...trustedContext,
+            userMessage,
+            calendarContext: { currentLocalDate: "2026-10-06" },
+          },
+          weightCall(localDate),
+        ),
+      ).rejects.toBeInstanceOf(ToolValidationError);
+      expect(weightMutation).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not authorize yesterday outside the supported lower calendar bound", async () => {
+    await expect(
+      executeFoodDayTool(
+        dependencies,
+        {
+          ...trustedContext,
+          userMessage: "Yesterday I was 80 kg.",
+          calendarContext: { currentLocalDate: "0001-01-01" },
+        },
+        weightCall("0000-12-31"),
+      ),
+    ).rejects.toBeInstanceOf(ToolValidationError);
+    expect(weightMutation).not.toHaveBeenCalled();
+  });
+
+  it("accepts today at the supported upper calendar bound", async () => {
+    mockWeightResult("9999-12-31");
+    await executeFoodDayTool(
+      dependencies,
+      {
+        ...trustedContext,
+        userMessage: "Today I weighed 80 kg.",
+        calendarContext: { currentLocalDate: "9999-12-31" },
+      },
+      weightCall("9999-12-31"),
+    );
+    expect(weightMutation).toHaveBeenCalledOnce();
+  });
+
+  it.each(["I weighed 80 kg today.", "Yesterday I weighed 80 kg."])(
+    "rejects relative %s without accepted calendar context",
+    async (userMessage) => {
+      await expect(
+        executeFoodDayTool(
+          dependencies,
+          { ...trustedContext, userMessage },
+          weightCall("2026-10-06"),
+        ),
+      ).rejects.toBeInstanceOf(ToolValidationError);
+      expect(weightMutation).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not use relative words from transcript as current-message evidence", async () => {
+    const contextWithHistory = {
+      ...trustedContext,
+      userMessage: "I weighed 80 kg.",
+      calendarContext: { currentLocalDate: "2026-10-06" },
+      recentTranscript: [
+        { userMessage: "I weighed 79 kg today.", response: "Noted." },
+      ],
+    };
+    await expect(
+      executeFoodDayTool(
+        dependencies,
+        contextWithHistory,
+        weightCall("2026-10-06"),
+      ),
+    ).rejects.toBeInstanceOf(ToolValidationError);
+    expect(weightMutation).not.toHaveBeenCalled();
+  });
+
+  it("preserves explicit ISO evidence independent of calendar context", async () => {
+    mockWeightResult("2026-10-05");
+    await executeFoodDayTool(
+      dependencies,
+      {
+        ...trustedContext,
+        userMessage: "On 2026-10-05 I weighed 80 kg.",
+        calendarContext: { currentLocalDate: "2026-10-06" },
+      },
+      weightCall("2026-10-05"),
+    );
+    expect(weightMutation).toHaveBeenCalledOnce();
+  });
+
+  it("checks token eligibility, not semantic attachment between clauses", async () => {
+    mockWeightResult("2026-10-05");
+    await executeFoodDayTool(
+      dependencies,
+      {
+        ...trustedContext,
+        userMessage: "My appointment was yesterday, but I weighed 80 kg today.",
+        calendarContext: { currentLocalDate: "2026-10-06" },
+      },
+      weightCall("2026-10-05"),
+    );
+    expect(weightMutation).toHaveBeenCalledOnce();
   });
 
   it.each([

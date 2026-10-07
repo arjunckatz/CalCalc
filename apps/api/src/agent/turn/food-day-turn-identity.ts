@@ -4,12 +4,15 @@ import {
   parseIdempotencyKey,
   type IdempotencyKey,
 } from "../../mutations/mutation-identity.js";
+import { isCanonicalLocalDate } from "../../calendar/local-date.js";
+import type { FoodDayCalendarContext } from "./food-day-turn-types.js";
 
 export interface FoodDayTurnIdentityInput {
   readonly trustedUserId: string;
   readonly foodDayId: string;
   readonly turnIdempotencyKey: IdempotencyKey;
   readonly userMessage: string;
+  readonly calendarContext?: FoodDayCalendarContext;
 }
 
 export interface FoodDayTurnIdentity {
@@ -20,7 +23,10 @@ export interface FoodDayTurnIdentity {
 }
 
 type FoodDayTurnIdentityErrorReason =
-  "INVALID_TRUSTED_USER_ID" | "INVALID_FOOD_DAY_ID" | "INVALID_USER_MESSAGE";
+  | "INVALID_TRUSTED_USER_ID"
+  | "INVALID_FOOD_DAY_ID"
+  | "INVALID_USER_MESSAGE"
+  | "INVALID_CALENDAR_CONTEXT";
 
 export class FoodDayTurnIdentityError extends Error {
   override readonly name = "FoodDayTurnIdentityError";
@@ -53,6 +59,28 @@ export function deriveFoodDayTurnIdentity(
   ) {
     throw new FoodDayTurnIdentityError("INVALID_USER_MESSAGE");
   }
+  const calendarContext = input.calendarContext;
+  const dateField =
+    calendarContext !== undefined &&
+    calendarContext !== null &&
+    typeof calendarContext === "object"
+      ? Object.getOwnPropertyDescriptor(calendarContext, "currentLocalDate")
+      : undefined;
+  if (
+    calendarContext !== undefined &&
+    (calendarContext === null ||
+      typeof calendarContext !== "object" ||
+      (Object.getPrototypeOf(calendarContext) !== Object.prototype &&
+        Object.getPrototypeOf(calendarContext) !== null) ||
+      Reflect.ownKeys(calendarContext).length !== 1 ||
+      dateField?.enumerable !== true ||
+      !("value" in dateField) ||
+      !isCanonicalLocalDate(dateField.value))
+  ) {
+    throw new FoodDayTurnIdentityError("INVALID_CALENDAR_CONTEXT");
+  }
+  const currentLocalDate =
+    dateField && "value" in dateField ? dateField.value : undefined;
 
   const turnHash = sha256(
     JSON.stringify([
@@ -70,6 +98,7 @@ export function deriveFoodDayTurnIdentity(
       canonicalUserId,
       canonicalFoodDayId,
       input.userMessage,
+      ...(currentLocalDate === undefined ? [] : [currentLocalDate]),
     ]),
   );
   return {

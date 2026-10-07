@@ -253,6 +253,56 @@ describe("runFoodDayTurn input and initial STATE", () => {
     expect(finalize.mock.calls[0]?.[0].recentTranscript).toBe(recentTranscript);
   });
 
+  it("passes accepted calendar context to decision and executor, never FoodDay STATE", async () => {
+    const { dependencies, decide, finalize } = setup({
+      type: "TOOLS",
+      calls: [logCall],
+    });
+    const calendarContext = { currentLocalDate: "2026-10-06" };
+    await runFoodDayTurn(dependencies, { ...trustedInput, calendarContext });
+    expect(decide).toHaveBeenCalledExactlyOnceWith({
+      userMessage: trustedInput.userMessage,
+      state: initialState,
+      recentTranscript,
+      calendarContext,
+    });
+    expect(toolExecutor.mock.calls[0]?.[1]).toMatchObject({
+      userMessage: trustedInput.userMessage,
+      calendarContext,
+    });
+    expect(initialState.foodDay).not.toHaveProperty("currentLocalDate");
+    expect(finalize.mock.calls[0]?.[0]).not.toHaveProperty("calendarContext");
+    expect(finalize.mock.calls[0]?.[0].toolResults).toEqual([logResult]);
+  });
+
+  it("does not let model code change the executor's accepted calendar date", async () => {
+    const { dependencies, decide } = setup();
+    const calendarContext = { currentLocalDate: "2026-10-06" };
+    decide.mockImplementationOnce(async (modelInput) => {
+      (
+        modelInput.calendarContext as { currentLocalDate: string }
+      ).currentLocalDate = "2026-10-07";
+      return { type: "TOOLS", calls: [logCall] };
+    });
+    await runFoodDayTurn(dependencies, { ...trustedInput, calendarContext });
+    expect(toolExecutor.mock.calls[0]?.[1].calendarContext).toEqual({
+      currentLocalDate: "2026-10-06",
+    });
+    expect(calendarContext.currentLocalDate).toBe("2026-10-06");
+  });
+
+  it("rejects invalid direct calendar context before STATE or model work", async () => {
+    const { dependencies, decide } = setup();
+    await expect(
+      runFoodDayTurn(dependencies, {
+        ...trustedInput,
+        calendarContext: { currentLocalDate: "2026-02-30" },
+      }),
+    ).rejects.toMatchObject({ reason: "INVALID_CALENDAR_CONTEXT" });
+    expect(stateQuery).not.toHaveBeenCalled();
+    expect(decide).not.toHaveBeenCalled();
+  });
+
   it("stops after transcript loading fails without invoking model or tools", async () => {
     const failure = new Error("transcript unavailable");
     const { dependencies, decide, finalize, loadRecentTranscript } = setup();

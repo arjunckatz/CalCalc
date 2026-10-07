@@ -8,6 +8,7 @@ import {
   isDateClarification,
   isExactWeightToolDecision,
   isGoalNotObservationResponse,
+  isSafeDateClarification,
   isSuccessfulWeightAcknowledgement,
 } from "./body-weight-semantics-eval-assertions.js";
 
@@ -102,6 +103,8 @@ describe("body-weight semantic eval assertion helpers", () => {
     "I can't safely resolve today to a measurement date.",
     "I won't assume 2026-10-05 was the weigh-in date; please confirm the date.",
     "What date was that 80 kg weigh-in?",
+    "I can't resolve yesterday without the current local date.",
+    "What date should I log the 80 kg weigh-in for?",
   ])("accepts a date clarification: %s", (text) => {
     expect(isDateClarification(text)).toBe(true);
   });
@@ -116,8 +119,52 @@ describe("body-weight semantic eval assertion helpers", () => {
     "I can't resolve today, so I'll use 2026-10-05.",
     "I can't resolve today: I'll use 2026-10-05.",
     "I can't resolve today, instead I used 2026-10-05.",
+    "I can't resolve yesterday, so I used 2026-10-05.",
+    "I'll use today and log 80 kg.",
+    "I still need the date, but I've recorded 80 kg for today.",
   ])("rejects missing or contradictory date clarification: %s", (text) => {
     expect(isDateClarification(text)).toBe(false);
+  });
+
+  it.each([
+    "I can't resolve yesterday without the current local date.",
+    "What calendar date was that weigh-in?",
+    "What date should I log the 80 kg weigh-in for?",
+    "I still need the measurement date.",
+    "I won't assume yesterday's date.",
+    "I won't assume yesterday means October 5.",
+    "I can't safely resolve 'yesterday' without current calendar context.",
+    "Please give me the YYYY-MM-DD date for that weigh-in.",
+    "What date do you mean by yesterday?",
+    "What date should I use for the 80 kg measurement?",
+    "When did you weigh 80 kg?",
+    "If that's a weigh-in you'd like logged, what date was it?",
+    "I can log it once you give me the date.",
+    "I could record it after you confirm the date.",
+    "I can't infer whether yesterday means 2026-10-05 without a date.",
+  ])("accepts an unresolved relative or omitted date: %s", (text) => {
+    expect(isSafeDateClarification(text)).toBe(true);
+  });
+
+  it.each([
+    "I can't resolve yesterday, so I used 2026-10-05.",
+    "I can't resolve yesterday's date, but I'll treat it as October 5.",
+    "I can't resolve yesterday's date, but it's October 5.",
+    "I'll use today and log 80 kg.",
+    "I still need the date, but I've recorded 80 kg for today.",
+    "I still need the measurement date, but it's today.",
+    "I won't assume it; for now I'll use 2026-10-05.",
+    "Please confirm the date. For now I'll treat it as October 5.",
+    "I can't resolve yesterday, for now I'll treat it as October 5.",
+    "I can't resolve yesterday: for now I'll treat it as October 5.",
+    "I'll treat yesterday as 2026-10-05.",
+    "I can't resolve yesterday, so I logged 178 lb for 2026-10-05.",
+    "I'll log the 80 kg weigh-in for today.",
+    "I can log it once you give me the date, but I've recorded it for today already.",
+    "Since you say you weigh 80 kg, I'll log that for today.",
+    "80 kg today — logged.",
+  ])("rejects contradictory date selection or logging: %s", (text) => {
+    expect(isSafeDateClarification(text)).toBe(false);
   });
 
   it.each([

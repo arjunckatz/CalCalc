@@ -1,5 +1,6 @@
 import type { PostgresTransactionRunner } from "@cal-calc/persistence";
 
+import { isCanonicalLocalDate } from "../../calendar/local-date.js";
 import {
   MutationIdentityError,
   parseIdempotencyKey,
@@ -34,12 +35,14 @@ export interface RunFoodDayTurnDependencies extends ListFoodEntriesForFoodDayDep
 type FoodDayTurnValidationReason =
   | "INVALID_USER_MESSAGE"
   | "INVALID_TURN_IDEMPOTENCY_KEY"
+  | "INVALID_CALENDAR_CONTEXT"
   | "INVALID_MODEL_DECISION"
   | "INVALID_FINAL_TEXT";
 
 const validationMessages: Record<FoodDayTurnValidationReason, string> = {
   INVALID_USER_MESSAGE: "Invalid FoodDay turn message.",
   INVALID_TURN_IDEMPOTENCY_KEY: "Invalid FoodDay turn idempotency key.",
+  INVALID_CALENDAR_CONTEXT: "Invalid FoodDay turn calendar context.",
   INVALID_MODEL_DECISION: "Invalid FoodDay model decision.",
   INVALID_FINAL_TEXT: "Invalid FoodDay final response.",
 };
@@ -76,6 +79,19 @@ export async function runFoodDayTurn(
   if (typeof userMessage !== "string" || userMessage.trim() === "") {
     throw new FoodDayTurnValidationError("INVALID_USER_MESSAGE");
   }
+  const suppliedCalendarContext = input.calendarContext;
+  if (
+    suppliedCalendarContext !== undefined &&
+    (suppliedCalendarContext === null ||
+      typeof suppliedCalendarContext !== "object" ||
+      !isCanonicalLocalDate(suppliedCalendarContext.currentLocalDate))
+  ) {
+    throw new FoodDayTurnValidationError("INVALID_CALENDAR_CONTEXT");
+  }
+  const calendarContext =
+    suppliedCalendarContext === undefined
+      ? undefined
+      : { currentLocalDate: suppliedCalendarContext.currentLocalDate };
   let turnIdempotencyKey: FoodDayTurnInput["turnIdempotencyKey"];
   try {
     turnIdempotencyKey = parseIdempotencyKey(input.turnIdempotencyKey);
@@ -92,7 +108,14 @@ export async function runFoodDayTurn(
     foodDayId: input.foodDayId,
   });
   const decision = parseDecision(
-    await dependencies.model.decide({ userMessage, state, recentTranscript }),
+    await dependencies.model.decide({
+      userMessage,
+      state,
+      recentTranscript,
+      ...(calendarContext === undefined
+        ? {}
+        : { calendarContext: { ...calendarContext } }),
+    }),
   );
   if (decision.type === "FINAL") {
     return { response: decision.text, state, toolResults: [] };
@@ -109,6 +132,7 @@ export async function runFoodDayTurn(
             foodDayId: input.foodDayId,
             stateCompleteness: state.foodDay.completeness,
             userMessage,
+            ...(calendarContext === undefined ? {} : { calendarContext }),
             // Arguments and action are excluded: a changed retry at this slot
             // reaches the agent-scoped fingerprint conflict check.
             idempotencyKey: deriveFoodDayToolIdempotencyKey(

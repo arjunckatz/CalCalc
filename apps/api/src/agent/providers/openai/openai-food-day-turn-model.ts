@@ -112,11 +112,17 @@ function decisionInput(
   input: FoodDayModelDecisionInput,
 ): string | ResponseInputItem[] {
   const state = stateForModel(input.state);
-  if (input.recentTranscript.length === 0) {
+  if (
+    input.recentTranscript.length === 0 &&
+    input.calendarContext === undefined
+  ) {
     return JSON.stringify({ state, userMessage: input.userMessage });
   }
+  const authoritativeContext = JSON.stringify({ canonicalFoodDayState: state });
   return conversationalInput(
-    JSON.stringify({ canonicalFoodDayState: state }),
+    input.calendarContext === undefined
+      ? authoritativeContext
+      : `${authoritativeContext}\nCURRENT CALENDAR CONTEXT:\n${JSON.stringify(input.calendarContext)}`,
     input.recentTranscript,
     input.userMessage,
   );

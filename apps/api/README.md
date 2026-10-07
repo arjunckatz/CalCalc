@@ -241,9 +241,12 @@ selection has not yet been live-evaluated.
 
 `POST /v1/food-days/:foodDayId/turns` requires verified Bearer identity, one
 valid `Idempotency-Key`, a UUID-shaped FoodDay ID, and the strict body
-`{ "message": string }`. Whitespace-only messages and unknown fields are
-rejected. The HTTP adapter passes the unchanged message and trusted identity,
-FoodDay, and parsed retry key to the injected provider-neutral turn runner. It
+`{ "message": string, "currentLocalDate"?: "YYYY-MM-DD" }`. The optional date
+must be an exact valid Gregorian date; malformed dates, whitespace-only messages,
+and unknown fields are rejected. This client-resolved date is accepted calendar
+context for this turn, not proof of location or timezone. The HTTP adapter passes
+the unchanged message, optional context, trusted identity, FoodDay, and parsed
+retry key to the injected provider-neutral turn runner. It
 does not load ownership separately, execute tools, perform nutrition arithmetic,
 or construct provider clients.
 
@@ -254,10 +257,11 @@ pre-mutation snapshot and is deliberately not exposed as current state.
 
 The HTTP key is the trusted turn key; M4B2 derives mutation child keys from that
 key and zero-based tool slots. After a successful turn response is durably
-recorded, an exact retry for the same trusted user, FoodDay, key, and message
+recorded, an exact retry for the same trusted user, FoodDay, key, message, and
+optional currentLocalDate
 returns the first stored public response without loading STATE, calling the
-model, or executing tools. Reusing that scoped key with a changed message is an
-idempotency conflict. Completed-turn persistence stores no STATE, tool results,
+model, or executing tools. Reusing that scoped key with a changed message or
+currentLocalDate is an idempotency conflict. Completed-turn persistence stores no STATE, tool results,
 or provider IDs. It retains the exact accepted user message with the terminal
 public assistant response as the minimal successful transcript pair for future
 continuity. Before a new turn asks the model to decide, the application loads up
@@ -359,6 +363,25 @@ no database or backend mutation, and makes at most eight Responses calls on a
 successful run with retries disabled. It is excluded from normal tests/CI.
 The deterministic executor guard checks current-message date/unit evidence;
 it does not prove that a date semantically belongs to the weigh-in.
+When `currentLocalDate` is supplied, it also permits standalone `today` and
+`yesterday`, resolving the latter by Gregorian calendar arithmetic. Without
+that context, relative dates still require clarification. An omitted date never
+defaults to today. FoodDay.localDate remains separate from conversational civil
+date, and the LOG_BODY_WEIGHT schema is unchanged. These relative-date paths
+have offline validation and one clean owner-run live semantic eval.
+
+The opt-in M4D6B relative-date eval passed one full owner run: one file and all
+six scenarios passed. With `OPENAI_API_KEY` and `OPENAI_MODEL` set locally, run
+`corepack pnpm --filter @cal-calc/api eval:openai:body-weight-relative-date-semantics`.
+It covers exactly six decision-only cases: today, yesterday, competing relative
+dates, correction safety, yesterday without context, and an omitted date despite
+context. It uses the production OpenAI adapter, prompt, parser, and tool schemas
+with production-built synthetic FoodDay STATE. The client-supplied
+`currentLocalDate` is turn context, not FoodDay.localDate. No database or mutation
+executor is used; with retries disabled, a successful full run makes at most six
+Responses calls. It is excluded from normal tests/CI. Deterministic executor date
+eligibility does not establish semantic clause association; that is what this
+live eval examines.
 
 ## Application-owned mutation identity
 
