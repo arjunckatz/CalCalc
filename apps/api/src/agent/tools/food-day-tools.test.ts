@@ -51,6 +51,29 @@ function statusCall() {
 }
 
 describe("parseFoodDayToolCall", () => {
+  it("accepts the zero-argument canonical body-weight history read", () => {
+    expect(
+      parseFoodDayToolCall({ name: "GET_BODY_WEIGHT_HISTORY", arguments: {} }),
+    ).toEqual({ name: "GET_BODY_WEIGHT_HISTORY", arguments: {} });
+  });
+
+  it.each([
+    null,
+    [],
+    { limit: 10 },
+    { userId: "attacker" },
+    { localDate: "2026-10-05" },
+    { currentLocalDate: "2026-10-06" },
+    { anything: true },
+  ])("rejects caller-selected body-weight history argument %#", (args) => {
+    expect(() =>
+      parseFoodDayToolCall({
+        name: "GET_BODY_WEIGHT_HISTORY",
+        arguments: args,
+      }),
+    ).toThrow(ToolValidationError);
+  });
+
   it("normalizes a valid LOG_FOOD call to serializable semantic arguments", () => {
     const call = parseFoodDayToolCall(logCall());
     expect(call).toEqual({

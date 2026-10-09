@@ -133,6 +133,50 @@ const removeCall = {
   name: "REMOVE_FOOD",
   arguments: { entryId: entry.id, expectedRevision: 2 },
 };
+const weightCall = {
+  name: "LOG_BODY_WEIGHT",
+  arguments: { localDate: "2026-10-05", sourceValue: "80", sourceUnit: "KG" },
+};
+const historyCall = { name: "GET_BODY_WEIGHT_HISTORY", arguments: {} };
+const weightResult: FoodDayToolResult = {
+  name: "LOG_BODY_WEIGHT",
+  result: {
+    disposition: "CREATED",
+    weightEntry: {
+      id: "40000000-0000-4000-8000-000000000001",
+      localDate: "2026-10-05",
+      sourceValue: "80",
+      sourceUnit: "KG",
+      weightKg: "80",
+      createdAt: "2026-10-06T12:00:00Z",
+    },
+  },
+};
+const historyResult: FoodDayToolResult = {
+  name: "GET_BODY_WEIGHT_HISTORY",
+  result: {
+    recentObservations: [
+      {
+        localDate: "2026-10-05",
+        sourceValue: "80",
+        sourceUnit: "KG",
+        weightKg: "80",
+      },
+    ],
+    recentHistoryMayBeTruncated: false,
+    latestMeasurementDate: "2026-10-05",
+    latestDateObservationCount: 1,
+    latestDateObservations: [
+      {
+        localDate: "2026-10-05",
+        sourceValue: "80",
+        sourceUnit: "KG",
+        weightKg: "80",
+      },
+    ],
+    latestDateObservationsComplete: true,
+  },
+};
 
 function setup(decision: unknown = { type: "FINAL", text: "Lunch noted." }) {
   const decide = vi.fn<FoodDayTurnModel["decide"]>();
@@ -145,6 +189,7 @@ function setup(decision: unknown = { type: "FINAL", text: "Lunch noted." }) {
   const dependencies: RunFoodDayTurnDependencies = {
     foodDays: { findById: vi.fn() },
     foodEntries: { listActiveByFoodDay: vi.fn() },
+    bodyWeights: { readHistory: vi.fn() },
     transactionRunner: { runInTransaction: vi.fn() },
     model: { decide, finalize },
     loadRecentTranscript,
@@ -636,6 +681,53 @@ describe("runFoodDayTurn trusted tool execution", () => {
     await turn;
     expect(toolExecutor).toHaveBeenCalledTimes(2);
     expect(toolExecutor.mock.calls[1]?.[2]).toBe(updateCall);
+  });
+
+  it("waits for a body-weight mutation before the following canonical history read", async () => {
+    let finishMutation!: (result: FoodDayToolResult) => void;
+    const pendingMutation = new Promise<FoodDayToolResult>((resolve) => {
+      finishMutation = resolve;
+    });
+    toolExecutor
+      .mockReturnValueOnce(pendingMutation)
+      .mockResolvedValueOnce(historyResult);
+    const { dependencies, finalize } = setup({
+      type: "TOOLS",
+      calls: [weightCall, historyCall],
+    });
+    const turn = runFoodDayTurn(dependencies, {
+      ...trustedInput,
+      userMessage: "On 2026-10-05 I weighed 80 kg. What's my latest weight?",
+    });
+    await vi.waitFor(() => expect(toolExecutor).toHaveBeenCalledTimes(1));
+    expect(toolExecutor.mock.calls[0]?.[2]).toBe(weightCall);
+    finishMutation(weightResult);
+    const result = await turn;
+    expect(toolExecutor.mock.calls.map(([, , call]) => call)).toEqual([
+      weightCall,
+      historyCall,
+    ]);
+    expect(result.toolResults).toEqual([weightResult, historyResult]);
+    expect(finalize.mock.calls[0]?.[0].toolResults).toEqual([
+      weightResult,
+      historyResult,
+    ]);
+  });
+
+  it("does not reorder a stale read-before-mutation batch", async () => {
+    toolExecutor
+      .mockResolvedValueOnce(historyResult)
+      .mockResolvedValueOnce(weightResult);
+    const { dependencies } = setup({
+      type: "TOOLS",
+      calls: [historyCall, weightCall],
+    });
+    const result = await runFoodDayTurn(dependencies, trustedInput);
+    expect(toolExecutor.mock.calls.map(([, , call]) => call)).toEqual([
+      historyCall,
+      weightCall,
+    ]);
+    expect(result.toolResults).toEqual([historyResult, weightResult]);
   });
 
   it("preserves the original three-call order", async () => {

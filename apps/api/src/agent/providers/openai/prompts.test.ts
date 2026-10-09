@@ -61,7 +61,7 @@ describe("body-weight observation policy", () => {
     );
     expect(decisionInstructions).toContain("correction is not supported yet");
     expect(decisionInstructions).toContain(
-      "do not answer weight-history or trend questions from transcript",
+      "Do not answer weight-history or trend questions from transcript",
     );
     expect(decisionInstructions).toContain("Do not calculate kilograms");
   });
@@ -81,7 +81,7 @@ describe("body-weight observation policy", () => {
       "Do not infer that a stored weigh-in exists solely because the user negates one date or value and affirms another",
     );
     expect(decisionInstructions).toContain(
-      "there is no canonical weight-history read path",
+      "check canonical history with GET_BODY_WEIGHT_HISTORY when the user asks about stored observations",
     );
     expect(decisionInstructions).toContain(
       "independently affirms an actual measurement with supported date, value, and unit, use LOG_BODY_WEIGHT for that affirmed observation",
@@ -114,6 +114,85 @@ describe("body-weight observation policy", () => {
     expect(decisionInstructions).toContain("never append a replacement row");
     expect(decisionInstructions).toContain(
       "Relative-date resolution does not make an existing-weigh-in correction loggable",
+    );
+  });
+});
+
+describe("canonical body-weight history policy", () => {
+  it("selects the zero-argument read for canonical history without weakening correction safety", () => {
+    expect(decisionInstructions).toContain(
+      "Use the zero-argument GET_BODY_WEIGHT_HISTORY for questions about latest logged weight or measurement date, recent weigh-ins, canonical history, or a particular absolute date",
+    );
+    expect(decisionInstructions).toContain(
+      "do not turn a correction into a new log",
+    );
+    expect(decisionInstructions).toContain(
+      "Such a correction is not supported yet; never append a replacement row",
+    );
+    expect(decisionInstructions).not.toContain(
+      "No canonical weight history or latest-weight data is available",
+    );
+  });
+
+  it.each([
+    ["decision", decisionInstructions],
+    ["finalization", finalizationInstructions],
+  ])(
+    "treats the read as authoritative and communicates bounded ambiguity in %s",
+    (_, text) => {
+      expect(text).toContain(
+        "A successful GET_BODY_WEIGHT_HISTORY result is the authority for canonical body-weight history, not transcript",
+      );
+      expect(text).toContain("latestMeasurementDate is null");
+      expect(text).toContain("latestDateObservationCount is 0");
+      expect(text).toContain("If the latest date has one observation");
+      expect(text).toContain("if it has more than one");
+      expect(text).toContain('not a single "latest weight"');
+      expect(text).toContain("latestDateObservationsComplete=true");
+      expect(text).toContain("recentHistoryMayBeTruncated=true");
+      expect(text).toContain("recentHistoryMayBeTruncated=false");
+      expect(text).toContain(
+        "an absent date under that flag does not prove no observation was logged",
+      );
+      expect(text).toContain(
+        "array order within one date is presentation only",
+      );
+      expect(text).toContain(
+        "sourceValue/sourceUnit or backend weightKg strings exactly",
+      );
+      expect(text).toContain(
+        "Do not calculate trend, delta, average, rate, BMI, or weight loss",
+      );
+    },
+  );
+
+  it("orders a compound log before its read and refuses stale post-mutation claims", () => {
+    expect(decisionInstructions).toContain(
+      "call LOG_BODY_WEIGHT before GET_BODY_WEIGHT_HISTORY",
+    );
+    expect(decisionInstructions).toContain(
+      "a read before a later LOG_BODY_WEIGHT is stale",
+    );
+    expect(finalizationInstructions).toContain(
+      "If that read precedes a later LOG_BODY_WEIGHT in the same turn, it is stale",
+    );
+    expect(finalizationInstructions).toContain(
+      "must not be presented as post-mutation history or patched with guessed values",
+    );
+  });
+
+  it("does not fabricate relative history dates when finalization lacks calendar context", () => {
+    expect(decisionInstructions).toContain(
+      "For a purely today/yesterday history lookup, ask for an absolute YYYY-MM-DD date",
+    );
+    expect(decisionInstructions).toContain(
+      "This does not change today/yesterday eligibility for LOG_BODY_WEIGHT",
+    );
+    expect(finalizationInstructions).toContain(
+      "Finalization receives no trusted CURRENT CALENDAR CONTEXT",
+    );
+    expect(finalizationInstructions).toContain(
+      "an independent latest-history question can still use latestMeasurementDate from the read",
     );
   });
 });

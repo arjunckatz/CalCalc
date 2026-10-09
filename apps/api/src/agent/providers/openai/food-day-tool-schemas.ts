@@ -137,6 +137,14 @@ export const openAIFoodDayTools: FunctionTool[] = [
       sourceUnit: { type: "string", enum: bodyWeightUnits },
     }),
   },
+  {
+    type: "function",
+    name: "GET_BODY_WEIGHT_HISTORY",
+    description:
+      "Read bounded canonical body-weight history for the verified user.",
+    strict: true,
+    parameters: strictObject({}),
+  },
 ];
 
 /**
@@ -150,7 +158,8 @@ export function normalizeOpenAIFoodDayToolArguments(
     | "REMOVE_FOOD"
     | "CHANGE_FOOD_STATUS"
     | "SET_FOOD_DAY_COMPLETENESS"
-    | "LOG_BODY_WEIGHT",
+    | "LOG_BODY_WEIGHT"
+    | "GET_BODY_WEIGHT_HISTORY",
   args: unknown,
 ): unknown {
   if (!isPlainDataRecord(args)) return args;

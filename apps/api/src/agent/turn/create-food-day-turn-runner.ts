@@ -1,4 +1,5 @@
 import {
+  PostgresBodyWeightRepository,
   PostgresFoodDayRepository,
   PostgresFoodDayTurnResultRepository,
   PostgresFoodEntryRepository,
@@ -32,6 +33,7 @@ export function createFoodDayTurnRunner(
 ): FoodDayTurnRunner {
   const foodDays = new PostgresFoodDayRepository(dependencies.postgres);
   const foodEntries = new PostgresFoodEntryRepository(dependencies.postgres);
+  const bodyWeights = new PostgresBodyWeightRepository(dependencies.postgres);
   const completedTurns = new PostgresFoodDayTurnResultRepository(
     dependencies.postgres,
   );
@@ -44,6 +46,7 @@ export function createFoodDayTurnRunner(
             {
               foodDays,
               foodEntries,
+              bodyWeights,
               transactionRunner: dependencies.transactionRunner,
               model: dependencies.model,
               loadRecentTranscript: async ({ trustedUserId, foodDayId }) =>

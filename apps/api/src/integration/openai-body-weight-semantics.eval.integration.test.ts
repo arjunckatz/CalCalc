@@ -9,9 +9,9 @@ import type { FoodDayModelDecision } from "../agent/turn/food-day-turn-types.js"
 import { buildFoodDayState } from "../state/build-food-day-state.js";
 import {
   boundedAnswerExcerpt,
-  isCanonicalHistoryUncertainResponse,
   isCorrectionUnavailableResponse,
   isDateClarification,
+  isExactHistoryReadToolDecision,
   isExactWeightToolDecision,
   isGoalNotObservationResponse,
   isSuccessfulWeightAcknowledgement,
@@ -32,12 +32,12 @@ type Scenario = {
       readonly finalize: boolean;
     }
   | {
+      readonly expected: "HISTORY_READ";
+    }
+  | {
       readonly expected: "FINAL";
       readonly answerCheck:
-        | "DATE_CLARIFICATION"
-        | "GOAL_REFUSAL"
-        | "CORRECTION_UNAVAILABLE"
-        | "HISTORY_UNCERTAIN";
+        "DATE_CLARIFICATION" | "GOAL_REFUSAL" | "CORRECTION_UNAVAILABLE";
     }
 );
 
@@ -109,8 +109,9 @@ const scenarios: readonly Scenario[] = [
         response: "Logged 80.4 kg for October 5.",
       },
     ],
-    expected: "FINAL",
-    answerCheck: "HISTORY_UNCERTAIN",
+    // Before the canonical read existed, this was a no-history FINAL case.
+    // The transcript is still not evidence: the model must now request the read.
+    expected: "HISTORY_READ",
   },
 ];
 
@@ -161,8 +162,6 @@ function checkFinalAnswer(
       return isGoalNotObservationResponse(text);
     case "CORRECTION_UNAVAILABLE":
       return isCorrectionUnavailableResponse(text);
-    case "HISTORY_UNCERTAIN":
-      return isCanonicalHistoryUncertainResponse(text);
   }
 }
 
@@ -192,6 +191,15 @@ it.each(scenarios)(
         ) {
           throw new EvalMismatch(
             "expected a safe FINAL answer with zero tools",
+          );
+        }
+        return;
+      }
+
+      if (scenario.expected === "HISTORY_READ") {
+        if (!isExactHistoryReadToolDecision(decision)) {
+          throw new EvalMismatch(
+            "expected exactly one zero-argument GET_BODY_WEIGHT_HISTORY call",
           );
         }
         return;
@@ -237,7 +245,7 @@ it.each(scenarios)(
             : "UnknownError";
       // eslint-disable-next-line preserve-caught-error
       throw new Error(
-        `${scenario.name}: expected=${JSON.stringify(scenario.expected === "TOOLS" ? { type: "TOOLS", calls: [{ name: "LOG_BODY_WEIGHT", arguments: scenario.arguments }] } : { type: "FINAL", answerCheck: scenario.answerCheck })}; actual=${JSON.stringify(actual)}; finalExcerpt=${finalAnswer === undefined ? "none" : JSON.stringify(boundedAnswerExcerpt(finalAnswer))}; failure=${failure}`,
+        `${scenario.name}: expected=${JSON.stringify(scenario.expected === "TOOLS" ? { type: "TOOLS", calls: [{ name: "LOG_BODY_WEIGHT", arguments: scenario.arguments }] } : scenario.expected === "HISTORY_READ" ? { type: "TOOLS", calls: [{ name: "GET_BODY_WEIGHT_HISTORY", arguments: {} }] } : { type: "FINAL", answerCheck: scenario.answerCheck })}; actual=${JSON.stringify(actual)}; finalExcerpt=${finalAnswer === undefined ? "none" : JSON.stringify(boundedAnswerExcerpt(finalAnswer))}; failure=${failure}`,
       );
     }
   },

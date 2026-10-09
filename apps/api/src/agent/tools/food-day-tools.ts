@@ -59,6 +59,10 @@ export type FoodDayToolCall =
   | {
       readonly name: "LOG_BODY_WEIGHT";
       readonly arguments: LogBodyWeightCommand;
+    }
+  | {
+      readonly name: "GET_BODY_WEIGHT_HISTORY";
+      readonly arguments: Readonly<Record<string, never>>;
     };
 
 const nutritionFields = [
@@ -112,6 +116,9 @@ export function parseFoodDayToolCall(input: unknown): FoodDayToolCall {
         name: "LOG_BODY_WEIGHT",
         arguments: parseBodyWeightArguments(call.arguments),
       };
+    case "GET_BODY_WEIGHT_HISTORY":
+      strictObject(call.arguments, []);
+      return { name: "GET_BODY_WEIGHT_HISTORY", arguments: {} };
     default:
       throw new ToolValidationError();
   }

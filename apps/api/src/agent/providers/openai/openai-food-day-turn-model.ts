@@ -174,7 +174,8 @@ function supportedToolName(name: string): FoodDayToolCall["name"] {
     name === "REMOVE_FOOD" ||
     name === "CHANGE_FOOD_STATUS" ||
     name === "SET_FOOD_DAY_COMPLETENESS" ||
-    name === "LOG_BODY_WEIGHT"
+    name === "LOG_BODY_WEIGHT" ||
+    name === "GET_BODY_WEIGHT_HISTORY"
   ) {
     return name;
   }

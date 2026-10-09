@@ -357,7 +357,10 @@ the correction case passed. With
 `corepack pnpm --filter @cal-calc/api eval:openai:body-weight-semantics`.
 It covers exactly seven conversational cases: an actual dated observation,
 an unrelated appointment date, competing dates, a negated date, a goal,
-a correction request, and transcript-only history. It uses the production
+a correction request, and transcript-only history. The earlier live result for
+the transcript-only case predates the canonical history read: that case now
+expects one `GET_BODY_WEIGHT_HISTORY` decision, which has not yet been run live.
+It uses the production
 OpenAI adapter, prompts, and tool parser with synthetic FoodDay STATE, requires
 no database or backend mutation, and makes at most eight Responses calls on a
 successful run with retries disabled. It is excluded from normal tests/CI.

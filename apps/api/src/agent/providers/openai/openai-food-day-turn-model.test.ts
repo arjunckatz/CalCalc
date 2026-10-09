@@ -264,7 +264,7 @@ describe("OpenAI FoodDay decision binding", () => {
     expect(requestAt(create).input).not.toContain("do-not-send");
   });
 
-  it("offers exactly six functions with auto selection and disables response storage", async () => {
+  it("offers exactly seven functions with auto selection and disables response storage", async () => {
     const { create, model } = setup();
     await model.decide(decisionInput("Hello"));
     const request = requestAt(create);
@@ -277,6 +277,7 @@ describe("OpenAI FoodDay decision binding", () => {
       "CHANGE_FOOD_STATUS",
       "SET_FOOD_DAY_COMPLETENESS",
       "LOG_BODY_WEIGHT",
+      "GET_BODY_WEIGHT_HISTORY",
     ]);
     expect(request.tool_choice).toBe("auto");
     expect(request.store).toBe(false);
@@ -312,6 +313,7 @@ describe("OpenAI FoodDay decision binding", () => {
     "CHANGE_FOOD_STATUS",
     "SET_FOOD_DAY_COMPLETENESS",
     "LOG_BODY_WEIGHT",
+    "GET_BODY_WEIGHT_HISTORY",
   ] as const)(
     "maps provider %s into an untrusted M4B1-compatible call",
     async (name) => {
@@ -345,11 +347,13 @@ describe("OpenAI FoodDay decision binding", () => {
                   }
                 : name === "SET_FOOD_DAY_COMPLETENESS"
                   ? { targetCompleteness: "USER_DECLARED_COMPLETE" }
-                  : {
-                      localDate: "2026-10-05",
-                      sourceValue: "178.5",
-                      sourceUnit: "LB",
-                    };
+                  : name === "GET_BODY_WEIGHT_HISTORY"
+                    ? {}
+                    : {
+                        localDate: "2026-10-05",
+                        sourceValue: "178.5",
+                        sourceUnit: "LB",
+                      };
       const { model } = setup(response("", [functionCall(name, args)]));
       const decision = await model.decide(decisionInput("Change"));
       expect(decision).toEqual({
@@ -361,6 +365,22 @@ describe("OpenAI FoodDay decision binding", () => {
       }
     },
   );
+
+  it("maps zero-argument history reads without provider metadata or query parameters", async () => {
+    const { model } = setup(
+      response("", [functionCall("GET_BODY_WEIGHT_HISTORY", {})]),
+    );
+    const decision = await model.decide(
+      decisionInput("What's my weight history?"),
+    );
+    expect(decision).toEqual({
+      type: "TOOLS",
+      calls: [{ name: "GET_BODY_WEIGHT_HISTORY", arguments: {} }],
+    });
+    expect(JSON.stringify(decision)).not.toMatch(
+      /call_private|fc_private|resp_private|total_tokens/,
+    );
+  });
 
   it("preserves multiple provider function calls in output order", async () => {
     const calls = [

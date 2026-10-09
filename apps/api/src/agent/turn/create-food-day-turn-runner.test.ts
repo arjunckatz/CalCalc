@@ -5,6 +5,7 @@ import type {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseIdempotencyKey } from "../../mutations/mutation-identity.js";
+import { getBodyWeightHistory } from "../../queries/get-body-weight-history.js";
 import type { FoodDayState } from "../../state/build-food-day-state.js";
 import {
   createFoodDayTurnRunner,
@@ -70,5 +71,37 @@ describe("createFoodDayTurnRunner transcript composition", () => {
     expect(loadedTranscript).toEqual([
       { userMessage: "Earlier message.", response: "Earlier response." },
     ]);
+  });
+
+  it("wires the committed body-weight application query to the caller-owned PostgreSQL executor", async () => {
+    const query = vi.fn<PostgresExecutor["query"]>().mockResolvedValue({
+      rows: [],
+    });
+    const postgres: PostgresExecutor = { query };
+    turnRunner.mockImplementation(async (dependencies, turnInput) => {
+      expect(
+        await getBodyWeightHistory(dependencies, {
+          trustedUserId: turnInput.trustedUserId,
+        }),
+      ).toEqual({
+        recentObservations: [],
+        latestMeasurementDate: null,
+        latestDateObservations: [],
+      });
+      return { response: "No observations.", state, toolResults: [] };
+    });
+
+    const runTurn = createFoodDayTurnRunner({
+      postgres,
+      transactionRunner: {} as PostgresTransactionRunner,
+      model: { decide: vi.fn(), finalize: vi.fn() },
+    });
+    await expect(runTurn(input)).resolves.toEqual({
+      response: "No observations.",
+    });
+    expect(query).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("from public.body_weight_entries"),
+      [input.trustedUserId, 30],
+    );
   });
 });

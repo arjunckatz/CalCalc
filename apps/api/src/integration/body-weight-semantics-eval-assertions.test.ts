@@ -6,6 +6,7 @@ import {
   isCanonicalHistoryUncertainResponse,
   isCorrectionUnavailableResponse,
   isDateClarification,
+  isExactHistoryReadToolDecision,
   isExactWeightToolDecision,
   isGoalNotObservationResponse,
   isSafeDateClarification,
@@ -13,6 +14,37 @@ import {
 } from "./body-weight-semantics-eval-assertions.js";
 
 describe("body-weight semantic eval assertion helpers", () => {
+  it("requires exactly one strict zero-argument canonical history read", () => {
+    expect(
+      isExactHistoryReadToolDecision({
+        type: "TOOLS",
+        calls: [{ name: "GET_BODY_WEIGHT_HISTORY", arguments: {} }],
+      }),
+    ).toBe(true);
+    for (const decision of [
+      { type: "FINAL", text: "I cannot verify history." },
+      { type: "TOOLS", calls: [] },
+      {
+        type: "TOOLS",
+        calls: [
+          { name: "GET_BODY_WEIGHT_HISTORY", arguments: {} },
+          { name: "GET_BODY_WEIGHT_HISTORY", arguments: {} },
+        ],
+      },
+      { type: "TOOLS", calls: [{ name: "LOG_BODY_WEIGHT", arguments: {} }] },
+      {
+        type: "TOOLS",
+        calls: [{ name: "GET_BODY_WEIGHT_HISTORY", arguments: { limit: 10 } }],
+      },
+      {
+        type: "TOOLS",
+        calls: [{ name: "GET_BODY_WEIGHT_HISTORY", arguments: null }],
+      },
+    ] as const) {
+      expect(isExactHistoryReadToolDecision(decision)).toBe(false);
+    }
+  });
+
   it("requires one exact production-parsed weight call", () => {
     const expected = {
       localDate: "2026-10-05",

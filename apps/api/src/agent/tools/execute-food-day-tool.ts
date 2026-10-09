@@ -4,6 +4,10 @@ import type {
 } from "@cal-calc/persistence";
 
 import {
+  getBodyWeightHistory,
+  type GetBodyWeightHistoryDependencies,
+} from "../../queries/get-body-weight-history.js";
+import {
   isCanonicalLocalDate,
   previousCalendarDate,
 } from "../../calendar/local-date.js";
@@ -34,6 +38,14 @@ import {
   type UpdateFoodEntryMutationResult,
 } from "../../mutations/update-food-entry.js";
 import { parseFoodDayToolCall, ToolValidationError } from "./food-day-tools.js";
+import {
+  projectBodyWeightHistory,
+  type ModelBodyWeightHistory,
+} from "./project-body-weight-history.js";
+
+export interface ExecuteFoodDayToolDependencies extends GetBodyWeightHistoryDependencies {
+  readonly transactionRunner: PostgresTransactionRunner;
+}
 
 export interface TrustedFoodDayToolContext {
   readonly trustedUserId: string;
@@ -70,10 +82,14 @@ export type FoodDayToolResult =
   | {
       readonly name: "LOG_BODY_WEIGHT";
       readonly result: LogBodyWeightMutationResult;
+    }
+  | {
+      readonly name: "GET_BODY_WEIGHT_HISTORY";
+      readonly result: ModelBodyWeightHistory;
     };
 
 export async function executeFoodDayTool(
-  dependencies: { readonly transactionRunner: PostgresTransactionRunner },
+  dependencies: ExecuteFoodDayToolDependencies,
   trustedContext: TrustedFoodDayToolContext,
   untrustedToolCall: unknown,
 ): Promise<FoodDayToolResult> {
@@ -159,6 +175,13 @@ export async function executeFoodDayTool(
           operationScope: "FOOD_DAY_TURN_TOOL",
           command: call.arguments,
         }),
+      };
+    case "GET_BODY_WEIGHT_HISTORY":
+      return {
+        name: call.name,
+        result: projectBodyWeightHistory(
+          await getBodyWeightHistory(dependencies, { trustedUserId }),
+        ),
       };
   }
 }

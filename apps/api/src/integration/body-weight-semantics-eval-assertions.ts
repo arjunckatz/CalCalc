@@ -28,6 +28,22 @@ export function isExactWeightToolDecision(
   }
 }
 
+/** The historical transcript-only fixture now requires a canonical read. */
+export function isExactHistoryReadToolDecision(
+  decision: FoodDayModelDecision,
+): boolean {
+  if (decision.type !== "TOOLS" || decision.calls.length !== 1) return false;
+  try {
+    const parsed = parseFoodDayToolCall(decision.calls[0]);
+    return (
+      parsed.name === "GET_BODY_WEIGHT_HISTORY" &&
+      Object.keys(parsed.arguments).length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 function normalizeApostrophes(text: string): string {
   return text.replace(/\u2019/g, "'");
 }
@@ -202,6 +218,7 @@ export function isCorrectionUnavailableResponse(text: string): boolean {
   );
 }
 
+/** Offline guard against claiming a transcript-only value as latest weight. */
 function hasAffirmativeLatestWeightClaim(text: string): boolean {
   return clauses(text).some((clause) => {
     const match =
@@ -218,6 +235,7 @@ function hasAffirmativeLatestWeightClaim(text: string): boolean {
   });
 }
 
+/** Retained for offline regression checks; live history requests now use the read. */
 export function isCanonicalHistoryUncertainResponse(text: string): boolean {
   const normalized = normalizeApostrophes(text);
   if (

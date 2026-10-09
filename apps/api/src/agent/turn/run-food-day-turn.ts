@@ -1,6 +1,7 @@
 import type { PostgresTransactionRunner } from "@cal-calc/persistence";
 
 import { isCanonicalLocalDate } from "../../calendar/local-date.js";
+import type { GetBodyWeightHistoryDependencies } from "../../queries/get-body-weight-history.js";
 import {
   MutationIdentityError,
   parseIdempotencyKey,
@@ -23,7 +24,10 @@ import { deriveFoodDayToolIdempotencyKey } from "./turn-idempotency.js";
 
 export const MAX_FOOD_DAY_TOOL_CALLS_PER_TURN = 8;
 
-export interface RunFoodDayTurnDependencies extends ListFoodEntriesForFoodDayDependencies {
+export interface RunFoodDayTurnDependencies
+  extends
+    ListFoodEntriesForFoodDayDependencies,
+    GetBodyWeightHistoryDependencies {
   readonly transactionRunner: PostgresTransactionRunner;
   readonly model: FoodDayTurnModel;
   readonly loadRecentTranscript: (input: {
@@ -257,7 +261,8 @@ function safeToolName(value: unknown): FoodDayToolCall["name"] | undefined {
       name === "REMOVE_FOOD" ||
       name === "CHANGE_FOOD_STATUS" ||
       name === "SET_FOOD_DAY_COMPLETENESS" ||
-      name === "LOG_BODY_WEIGHT"
+      name === "LOG_BODY_WEIGHT" ||
+      name === "GET_BODY_WEIGHT_HISTORY"
       ? name
       : undefined;
   } catch {

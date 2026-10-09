@@ -1,7 +1,12 @@
-import { createFoodEntry, DomainValidationError } from "@cal-calc/domain";
+import {
+  createBodyWeightEntry,
+  createFoodEntry,
+  DomainValidationError,
+} from "@cal-calc/domain";
 import {
   FoodDayCompletenessConflictError,
   SemanticOperationIdempotencyConflictError,
+  type PostgresBodyWeightRepository,
   type PostgresTransactionRunner,
 } from "@cal-calc/persistence";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,7 +59,11 @@ const runner: PostgresTransactionRunner = {
     throw new Error("The mocked mutation should own transaction execution.");
   },
 };
-const dependencies = { transactionRunner: runner };
+const readHistory = vi.fn<PostgresBodyWeightRepository["readHistory"]>();
+const dependencies = {
+  transactionRunner: runner,
+  bodyWeights: { readHistory },
+};
 const entry = createFoodEntry({
   id: "30000000-0000-4000-8000-000000000001",
   foodDayId: trustedContext.foodDayId,
@@ -131,6 +140,98 @@ beforeEach(() => {
 });
 
 describe("executeFoodDayTool", () => {
+  it("uses the trusted user for the application history read without mutation machinery", async () => {
+    const weight = createBodyWeightEntry({
+      id: "40000000-0000-4000-8000-000000000001",
+      localDate: "2026-10-05",
+      sourceValue: "178.125",
+      sourceUnit: "LB",
+    });
+    readHistory.mockResolvedValueOnce({
+      recentObservations: [
+        {
+          entry: weight,
+          userId: trustedContext.trustedUserId,
+          createdAt: "2026-10-06T12:00:00Z",
+        },
+      ],
+      latestMeasurementDate: "2026-10-05",
+      latestDateObservations: [
+        {
+          entry: weight,
+          userId: trustedContext.trustedUserId,
+          createdAt: "2026-10-06T12:00:00Z",
+        },
+      ],
+    });
+
+    const result = await executeFoodDayTool(dependencies, trustedContext, {
+      name: "GET_BODY_WEIGHT_HISTORY",
+      arguments: {},
+    });
+    expect(readHistory).toHaveBeenCalledExactlyOnceWith(
+      trustedContext.trustedUserId,
+      30,
+    );
+    expect(result).toEqual({
+      name: "GET_BODY_WEIGHT_HISTORY",
+      result: {
+        recentObservations: [
+          {
+            localDate: "2026-10-05",
+            sourceValue: "178.125",
+            sourceUnit: "LB",
+            weightKg: "80.79614090625",
+          },
+        ],
+        recentHistoryMayBeTruncated: false,
+        latestMeasurementDate: "2026-10-05",
+        latestDateObservationCount: 1,
+        latestDateObservations: [
+          {
+            localDate: "2026-10-05",
+            sourceValue: "178.125",
+            sourceUnit: "LB",
+            weightKg: "80.79614090625",
+          },
+        ],
+        latestDateObservationsComplete: true,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain(weight.id);
+    expect(JSON.stringify(result)).not.toContain("createdAt");
+    expect(createMutation).not.toHaveBeenCalled();
+    expect(updateMutation).not.toHaveBeenCalled();
+    expect(removeMutation).not.toHaveBeenCalled();
+    expect(statusMutation).not.toHaveBeenCalled();
+    expect(completenessMutation).not.toHaveBeenCalled();
+    expect(weightMutation).not.toHaveBeenCalled();
+  });
+
+  it("rejects model-selected history filters before the read", async () => {
+    await expect(
+      executeFoodDayTool(dependencies, trustedContext, {
+        name: "GET_BODY_WEIGHT_HISTORY",
+        arguments: { userId: "attacker", limit: 100 },
+      }),
+    ).rejects.toBeInstanceOf(ToolValidationError);
+    expect(readHistory).not.toHaveBeenCalled();
+  });
+
+  it("propagates a canonical history query failure without invoking mutation machinery", async () => {
+    const failure = new Error("private query detail");
+    readHistory.mockRejectedValueOnce(failure);
+    await expect(
+      executeFoodDayTool(dependencies, trustedContext, {
+        name: "GET_BODY_WEIGHT_HISTORY",
+        arguments: {},
+      }),
+    ).rejects.toBe(failure);
+    expect(readHistory).toHaveBeenCalledTimes(1);
+    expect(weightMutation).not.toHaveBeenCalled();
+    expect(createMutation).not.toHaveBeenCalled();
+  });
+
   it("validates LOG_FOOD and injects trusted user, day, retry identity, and operation scope", async () => {
     const authoritative = { disposition: "CREATED" as const, entry };
     createMutation.mockResolvedValueOnce(authoritative);

@@ -88,7 +88,7 @@ function updateArguments() {
 }
 
 describe("OpenAI FoodDay function tools", () => {
-  it("exposes exactly six strict function tools", () => {
+  it("exposes exactly seven strict function tools", () => {
     expect(openAIFoodDayTools.map((tool) => tool.name)).toEqual([
       "LOG_FOOD",
       "UPDATE_FOOD_QUANTITY",
@@ -96,6 +96,7 @@ describe("OpenAI FoodDay function tools", () => {
       "CHANGE_FOOD_STATUS",
       "SET_FOOD_DAY_COMPLETENESS",
       "LOG_BODY_WEIGHT",
+      "GET_BODY_WEIGHT_HISTORY",
     ]);
     for (const tool of openAIFoodDayTools) {
       expect(tool.type).toBe("function");
@@ -220,6 +221,34 @@ describe("OpenAI FoodDay function tools", () => {
     expect(
       asSchema(propertiesOf(asSchema(propertiesOf(log).quantity)).unit).enum,
     ).toEqual(["GRAM", "MILLILITRE", "SERVING", "CONTAINER"]);
+  });
+
+  it("defines history as a strict zero-argument function", () => {
+    expect(parametersOf("GET_BODY_WEIGHT_HISTORY")).toEqual({
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    });
+    expect(
+      parseFoodDayToolCall({
+        name: "GET_BODY_WEIGHT_HISTORY",
+        arguments: {},
+      }),
+    ).toEqual({ name: "GET_BODY_WEIGHT_HISTORY", arguments: {} });
+    for (const argumentsValue of [
+      { limit: 10 },
+      { userId: entryId },
+      { localDate: "2026-10-05" },
+      { anything: true },
+    ]) {
+      expect(() =>
+        parseFoodDayToolCall({
+          name: "GET_BODY_WEIGHT_HISTORY",
+          arguments: argumentsValue,
+        }),
+      ).toThrow(ToolValidationError);
+    }
   });
 
   it("exposes no trusted or internal operation fields in any schema", () => {
@@ -368,5 +397,12 @@ describe("OpenAI nullable-nutrient adaptation", () => {
         arguments: args,
       }),
     ).toEqual({ name: "SET_FOOD_DAY_COMPLETENESS", arguments: args });
+  });
+
+  it("leaves zero-argument history input untouched for the provider-neutral validator", () => {
+    const args = {};
+    expect(
+      normalizeOpenAIFoodDayToolArguments("GET_BODY_WEIGHT_HISTORY", args),
+    ).toBe(args);
   });
 });
