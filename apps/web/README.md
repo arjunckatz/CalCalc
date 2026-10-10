@@ -1,10 +1,9 @@
 # Experimental CalCalc web client
 
 A removable React + TypeScript + Vite adapter with Redux Toolkit, React Redux,
-Supabase browser authentication, and plain responsive HTML/CSS. It consumes only
-the public `POST /v1/food-days` contract. No domain/persistence imports or database
-access; the backend owns validation, ownership, decimal normalization, mutation
-identity, and canonical state.
+Supabase browser authentication, and plain responsive HTML/CSS. It consumes
+the public FoodDay creation and conversational-turn contracts. No domain or
+persistence imports or database access; the backend owns canonical state.
 
 ## Run
 
@@ -13,7 +12,7 @@ Copy `.env.example` to `.env.local` and supply only:
 - `VITE_SUPABASE_URL`: your public Supabase project URL.
 - Exactly one of `VITE_SUPABASE_PUBLISHABLE_KEY` (modern `sb_publishable_` key)
   or `VITE_SUPABASE_ANON_KEY` (legacy Supabase `anon` JWT). Leave the other empty.
-- `VITE_CALCALC_API_URL`: a reachable CalCalc HTTP base URL.
+- `VITE_CALCALC_API_URL`: the web origin (`http://127.0.0.1:5173` locally).
 
 Never provide a service/secret credential or database URL. Vite's automatic env
 exposure is disabled; the build selects only the listed values. Both-set and
@@ -28,9 +27,13 @@ configuration is public; missing/invalid configuration fails without echoing val
 corepack pnpm --filter @cal-calc/web dev
 ```
 
-The current backend has an app factory, not a running HTTP listener. This slice
-does **not** add a server, proxy, or CORS policy. Creation requires a future
-reachable, browser-compatible API; local Vite alone does not provide one.
+Start local Supabase, then `corepack pnpm --filter @cal-calc/api dev:server`
+with the server-only environment documented in `apps/api/README.md`, then run
+the Vite command above. The dev server binds `127.0.0.1:3001`; Vite proxies
+same-origin `/v1` requests to it. No production API CORS policy is changed.
+Use an existing local Supabase Auth account; the web app does not create
+accounts or profiles. FoodDay creation references `auth.users` directly and
+does not require a profile row.
 
 ## Behavior
 
@@ -55,8 +58,15 @@ the in-memory attempt; it does not undo a possibly committed request. Do not
 interpret a new submission afterward as a safe retry of that lost attempt.
 
 Account changes discard prior results and ignore late responses; same-account
-token refresh preserves pending intent. Errors use fixed local messages, not raw
-SDK/server text. No claim of browser-to-PostgreSQL end-to-end execution is made.
+token refresh preserves pending intent. After FoodDay creation, the chat is
+scoped to that day and account. Each message sends a fresh UUID and a snapshot
+of the browser's local date. An uncertain response keeps the exact message,
+FoodDay, key, and date for explicit retry; the current refreshed access token
+is used. Successful turns append the authoritative public response. The
+browser transcript is display-only: the server loads canonical STATE and
+durable recent transcript. Reloading loses the in-memory retry handle, not
+necessarily a server-side mutation. Errors use fixed local messages, not raw
+SDK/server text. Live browser-to-PostgreSQL/OpenAI rehearsal is a separate step.
 
 ## Validate
 

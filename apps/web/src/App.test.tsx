@@ -62,10 +62,14 @@ function setup(signedIn = true, restored?: Promise<BrowserSession | null>) {
     .mockReturnValueOnce("intent-one")
     .mockReturnValueOnce("intent-two")
     .mockReturnValue("intent-next");
+  const currentLocalDate = jest
+    .fn<() => string>()
+    .mockReturnValue("2026-10-10");
   const client = createWebClient({
     auth,
     api: createApiClient("https://api.example/", fetchMock),
     newKey,
+    currentLocalDate,
   });
   const view = render(<App client={client} />);
   return {
@@ -73,6 +77,7 @@ function setup(signedIn = true, restored?: Promise<BrowserSession | null>) {
     auth,
     fetchMock,
     newKey,
+    currentLocalDate,
     client,
     user: userEvent.setup(),
     emit: (value: BrowserSession | null) => act(() => notify(value)),
@@ -553,4 +558,256 @@ describe("experimental FoodDay client", () => {
       await screen.findByRole("button", { name: "Sign out" }),
     ).toBeEnabled();
   });
+
+  it("requires a selected FoodDay before chat can send", async () => {
+    const { fetchMock } = setup();
+    expect(
+      await screen.findByText("Create a FoodDay to start chatting."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeDisabled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sends authenticated turns with a fresh key and local date, then displays authoritative text", async () => {
+    const { user, fetchMock, newKey } = setup();
+    await fill(user);
+    await submit(user);
+    await screen.findByText("CREATED");
+    fetchMock.mockResolvedValueOnce(
+      response(200, { response: "Logged your toast." }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "I ate toast.",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    const transcript = screen.getByRole("log", {
+      name: "Conversation transcript",
+    });
+    expect(
+      await within(transcript).findByText("Logged your toast."),
+    ).toBeVisible();
+    expect(within(transcript).getByText("I ate toast.")).toBeVisible();
+    const [url, init] = fetchMock.mock.calls[1]!;
+    expect(url).toBe("https://api.example/v1/food-days/day-a/turns");
+    expect(init).toMatchObject({
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-access-token",
+        "Idempotency-Key": "intent-two",
+        "Content-Type": "application/json",
+      },
+      credentials: "omit",
+      redirect: "error",
+    });
+    expect(JSON.parse(init!.body as string)).toEqual({
+      message: "I ate toast.",
+      currentLocalDate: "2026-10-10",
+    });
+    expect(newKey).toHaveBeenCalledTimes(2);
+    expect(document.body).not.toHaveTextContent(session.accessToken);
+  });
+
+  it("retries an uncertain turn with identical day, message, key and date but refreshed token", async () => {
+    const { user, fetchMock, newKey, currentLocalDate, emit } = setup();
+    await fill(user);
+    await submit(user);
+    await screen.findByText("CREATED");
+    fetchMock.mockRejectedValueOnce(new Error("private network detail"));
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "I weighed 80 kg today.",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not confirm this message",
+    );
+    currentLocalDate.mockReturnValue("2026-10-11");
+    emit({ ...session, accessToken: "refreshed-token" });
+    fetchMock.mockResolvedValueOnce(
+      response(200, { response: "Logged 80 kg." }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Retry same message" }),
+    );
+    expect(await screen.findByText("Logged 80 kg.")).toBeVisible();
+    const first = fetchMock.mock.calls[1]!;
+    const retry = fetchMock.mock.calls[2]!;
+    expect(retry[0]).toBe(first[0]);
+    expect(retry[1]!.body).toBe(first[1]!.body);
+    expect(retry[1]!.headers).toEqual({
+      "Content-Type": "application/json",
+      Authorization: "Bearer refreshed-token",
+      "Idempotency-Key": "intent-two",
+    });
+    expect(JSON.parse(retry[1]!.body as string).currentLocalDate).toBe(
+      "2026-10-10",
+    );
+    expect(newKey).toHaveBeenCalledTimes(2);
+    expect(currentLocalDate).toHaveBeenCalledTimes(1);
+    expect(
+      within(screen.getByRole("log")).getAllByText("I weighed 80 kg today."),
+    ).toHaveLength(1);
+    expect(document.body).not.toHaveTextContent("private network detail");
+  });
+
+  it("disables duplicate sends while a turn is pending and gives the next turn a new key", async () => {
+    const pending = deferred<Response>();
+    const { user, fetchMock } = setup();
+    await fill(user);
+    await submit(user);
+    await screen.findByText("CREATED");
+    fetchMock.mockReturnValueOnce(pending.promise);
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "First");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () =>
+      pending.resolve(response(200, { response: "First answer" })),
+    );
+    expect(await screen.findByText("First answer")).toBeVisible();
+    fetchMock.mockResolvedValueOnce(
+      response(200, { response: "Second answer" }),
+    );
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Second");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Second answer")).toBeVisible();
+    expect(fetchMock.mock.calls[1]![1]!.headers).toMatchObject({
+      "Idempotency-Key": "intent-two",
+    });
+    expect(fetchMock.mock.calls[2]![1]!.headers).toMatchObject({
+      "Idempotency-Key": "intent-next",
+    });
+  });
+
+  it("clears the visible transcript and pending retry on sign-out or account change", async () => {
+    const { user, fetchMock, emit } = setup();
+    await fill(user);
+    await submit(user);
+    await screen.findByText("CREATED");
+    fetchMock.mockRejectedValueOnce(new Error("network"));
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Private turn",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("button", { name: "Retry same message" });
+    emit({ subject: "other-account", accessToken: "other-token" });
+    expect(screen.queryByText("Private turn")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry same message" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(await screen.findByRole("textbox", { name: "Email" })).toBeVisible();
+    expect(screen.queryByRole("log")).not.toBeInTheDocument();
+  });
+
+  it("clears chat scope when a new FoodDay is created", async () => {
+    const { user, fetchMock } = setup();
+    await fill(user);
+    await submit(user);
+    await screen.findByText("CREATED");
+    fetchMock.mockResolvedValueOnce(
+      response(200, { response: "Old day reply" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Old day turn",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Old day reply");
+    fetchMock.mockResolvedValueOnce(
+      response(201, {
+        ...result,
+        foodDay: { ...result.foodDay, id: "day-b" },
+      }),
+    );
+    await submit(user);
+    await screen.findByText("CREATED");
+    expect(screen.queryByText("Old day turn")).not.toBeInTheDocument();
+    expect(screen.queryByText("Old day reply")).not.toBeInTheDocument();
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "New day turn",
+    );
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  });
+
+  it("drops a pending retry when a different FoodDay becomes selected", async () => {
+    const { user, fetchMock } = setup();
+    await fill(user);
+    await submit(user);
+    await screen.findByText("CREATED");
+    fetchMock.mockRejectedValueOnce(new Error("network"));
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Old day uncertain turn",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("button", { name: "Retry same message" });
+    fetchMock.mockResolvedValueOnce(
+      response(201, {
+        ...result,
+        foodDay: { ...result.foodDay, id: "day-b" },
+      }),
+    );
+    await submit(user);
+    await screen.findByText("CREATED");
+    expect(
+      screen.queryByText("Old day uncertain turn"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry same message" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("never shows a late reply from an account that has been replaced", async () => {
+    const pending = deferred<Response>();
+    const { user, fetchMock, emit } = setup();
+    await fill(user);
+    await submit(user);
+    await screen.findByText("CREATED");
+    fetchMock.mockReturnValueOnce(pending.promise);
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Old account turn",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    emit({ subject: "account-b", accessToken: "token-b" });
+    await act(async () =>
+      pending.resolve(response(200, { response: "Old account reply" })),
+    );
+    expect(screen.queryByText("Old account turn")).not.toBeInTheDocument();
+    expect(screen.queryByText("Old account reply")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it.each([
+    [401, "Your session was rejected"],
+    [409, "This retry conflicts"],
+    [500, "Could not confirm this message"],
+  ] as const)(
+    "shows fixed chat error for HTTP %s without raw server text",
+    async (status, text) => {
+      const { user, fetchMock } = setup();
+      await fill(user);
+      await submit(user);
+      await screen.findByText("CREATED");
+      fetchMock.mockResolvedValueOnce(
+        response(status, { error: { message: "private server data" } }),
+      );
+      await user.type(
+        screen.getByRole("textbox", { name: "Message" }),
+        "Test turn",
+      );
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(text);
+      expect(document.body).not.toHaveTextContent("private server data");
+      expect(
+        Boolean(screen.queryByRole("button", { name: "Retry same message" })),
+      ).toBe(status === 500);
+    },
+  );
 });

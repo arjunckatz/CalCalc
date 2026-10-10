@@ -118,6 +118,35 @@ fieldset {
   letter-spacing: 0.08em;
   color: #245a46;
 }
+.chat-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 4rem;
+  margin: 1rem 0;
+}
+.chat-message {
+  max-width: 88%;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-message.user {
+  align-self: flex-end;
+  background: #e7f1e9;
+}
+.chat-message.assistant {
+  align-self: flex-start;
+  background: #f0eee6;
+}
+.chat-speaker {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
 dl {
   margin: 1rem 0;
 }

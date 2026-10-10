@@ -13,6 +13,7 @@ import type {
   CreateFoodDayCommand,
   CreateFoodDayResult,
 } from "./contracts";
+import { browserLocalDate } from "./local-date";
 
 interface Attempt {
   key: string;
@@ -39,6 +40,7 @@ interface Dependencies {
   auth: AuthGateway;
   api: ApiClient;
   newKey: () => string;
+  currentLocalDate?: () => string;
 }
 const initialFoodDay: FoodDayState = {
   status: "idle",
@@ -178,6 +180,31 @@ export function createWebClient(dependencies: Dependencies) {
   let notificationVersion = 0;
   return {
     store,
+    newTurnKey: dependencies.newKey,
+    currentLocalDate:
+      dependencies.currentLocalDate ?? (() => browserLocalDate(new Date())),
+    async sendTurn(attempt: {
+      foodDayId: string;
+      message: string;
+      idempotencyKey: string;
+      currentLocalDate: string;
+    }) {
+      const session = store.getState().auth.session;
+      if (session === null) {
+        throw new ApiError({
+          kind: "unauthenticated",
+          message: "Sign in before sending a message.",
+          retryable: false,
+        });
+      }
+      return dependencies.api.sendTurn(
+        attempt.foodDayId,
+        attempt.message,
+        attempt.currentLocalDate,
+        session.accessToken,
+        attempt.idempotencyKey,
+      );
+    },
     connect() {
       let active = true;
       const version = authVersion;

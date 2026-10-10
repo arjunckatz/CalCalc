@@ -25,6 +25,10 @@ export interface CreateFoodDayResult {
   foodDay: FoodDayDto;
 }
 
+export interface FoodDayTurnResult {
+  response: string;
+}
+
 export interface ClientError {
   kind: "network" | "validation" | "unauthenticated" | "conflict" | "server";
   message: string;

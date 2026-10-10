@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Provider, useSelector } from "react-redux";
 import type { WebClient, WebState } from "./store";
+import { Chat } from "./Chat";
 
 export function App({ client }: { client: WebClient }) {
   useEffect(() => client.connect(), [client]);
@@ -13,6 +14,9 @@ export function App({ client }: { client: WebClient }) {
 
 function ClientView({ client }: { client: WebClient }) {
   const auth = useSelector((state: WebState) => state.auth);
+  const foodDayId = useSelector(
+    (state: WebState) => state.foodDay.result?.foodDay.id ?? null,
+  );
   return (
     <main className="shell">
       <header className="masthead">
@@ -49,6 +53,12 @@ function ClientView({ client }: { client: WebClient }) {
                 key={auth.session.subject}
                 client={client}
                 authBusy={auth.busy}
+              />
+              <Chat
+                key={`${auth.session.subject}:${foodDayId ?? "none"}`}
+                client={client}
+                foodDayId={foodDayId}
+                disabled={auth.busy}
               />
             </>
           )}

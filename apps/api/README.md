@@ -1,5 +1,13 @@
 # API database runtime
 
+For the temporary local browser demo, set `DATABASE_URL`, `SUPABASE_URL`,
+`SUPABASE_PUBLISHABLE_KEY`, `OPENAI_API_KEY`, and `OPENAI_MODEL` in the API
+process environment, then run `corepack pnpm --filter @cal-calc/api dev:server`.
+This thin entry point uses the production host factory and binds only
+`127.0.0.1:3001`. Stop it with Ctrl+C; it closes Fastify and the PostgreSQL
+pool. The web dev server proxies `/v1` to that listener. No browser secrets,
+production CORS policy, or model/ledger behavior are changed.
+
 `apps/api` owns the production `pg` pool lifecycle. Construct it explicitly with
 `createPostgresRuntime({ connectionString })`, then call `await runtime.close()`
 to delegate shutdown to `pool.end()`. Imports create no pool or connection;

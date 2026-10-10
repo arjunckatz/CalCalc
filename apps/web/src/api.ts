@@ -2,6 +2,7 @@ import type {
   ClientError,
   CreateFoodDayCommand,
   CreateFoodDayResult,
+  FoodDayTurnResult,
 } from "./contracts";
 
 export class ApiError extends Error {
@@ -15,6 +16,78 @@ export function createApiClient(
   request: typeof fetch = fetch,
 ) {
   return {
+    async sendTurn(
+      foodDayId: string,
+      message: string,
+      currentLocalDate: string,
+      token: string,
+      key: string,
+    ): Promise<FoodDayTurnResult> {
+      let response: Response;
+      try {
+        response = await request(
+          `${baseUrl.replace(/\/+$/, "")}/v1/food-days/${encodeURIComponent(foodDayId)}/turns`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+              "Idempotency-Key": key,
+            },
+            body: JSON.stringify({ message, currentLocalDate }),
+            redirect: "error",
+            credentials: "omit",
+          },
+        );
+      } catch {
+        throw new ApiError({
+          kind: "network",
+          message: "Could not confirm this message. Retry the same request.",
+          retryable: true,
+        });
+      }
+      if (response.status === 400 || response.status === 404)
+        throw new ApiError({
+          kind: "validation",
+          message: "The message or FoodDay was rejected. Check your selection.",
+          retryable: false,
+        });
+      if (response.status === 401)
+        throw new ApiError({
+          kind: "unauthenticated",
+          message: "Your session was rejected. Sign out and sign in again.",
+          retryable: false,
+        });
+      if (response.status === 409)
+        throw new ApiError({
+          kind: "conflict",
+          message: "This retry conflicts with an earlier request.",
+          retryable: false,
+        });
+      if (response.status !== 200)
+        throw new ApiError({
+          kind: "server",
+          message: "Could not confirm this message. Retry the same request.",
+          retryable: true,
+        });
+      try {
+        const body: unknown = await response.json();
+        if (
+          !record(body) ||
+          typeof body.response !== "string" ||
+          body.response.trim() === ""
+        )
+          throw new Error("Invalid response.");
+        return { response: body.response };
+      } catch {
+        throw new ApiError({
+          kind: "server",
+          message:
+            "An unexpected response left this message unconfirmed. Retry it.",
+          retryable: true,
+        });
+      }
+    },
     async createFoodDay(
       command: CreateFoodDayCommand,
       token: string,
