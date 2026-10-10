@@ -9,12 +9,14 @@ import {
 import type { ListFoodEntriesForFoodDayDependencies } from "../../queries/list-food-entries-for-food-day.js";
 import { getFoodDayState } from "../../state/get-food-day-state.js";
 import {
+  executeBodyWeightHistoryRead,
   executeFoodDayTool,
   type FoodDayToolResult,
 } from "../tools/execute-food-day-tool.js";
 import type { FoodDayToolCall } from "../tools/food-day-tools.js";
 import type {
   FoodDayModelDecision,
+  FoodDayModelFinalizationStep,
   FoodDayTurnInput,
   FoodDayTurnModel,
   FoodDayTurnResult,
@@ -158,16 +160,62 @@ export async function runFoodDayTurn(
     }
   }
 
+  const finalizationInput = {
+    userMessage,
+    state,
+    recentTranscript,
+    toolResults: [...toolResults],
+  };
+  const firstStep = parseFinalizationStep(
+    await dependencies.model.finalizeOrRead(finalizationInput),
+  );
+  if (firstStep.type === "FINAL") {
+    return { response: firstStep.text, state, toolResults };
+  }
+
+  // Exactly one read continuation. It has no mutation key or operation claim.
+  toolResults.push(
+    await executeBodyWeightHistoryRead(dependencies, input.trustedUserId),
+  );
   const response = validText(
     await dependencies.model.finalize({
       userMessage,
       state,
       recentTranscript,
-      toolResults,
+      toolResults: [...toolResults],
     }),
     "INVALID_FINAL_TEXT",
   );
   return { response, state, toolResults };
+}
+
+function parseFinalizationStep(value: unknown): FoodDayModelFinalizationStep {
+  try {
+    if (!isPlainObject(value)) throw new Error();
+    if (hasOnlyDataFields(value, ["type", "text"]) && value.type === "FINAL") {
+      return {
+        type: "FINAL",
+        text: validText(value.text, "INVALID_FINAL_TEXT"),
+      };
+    }
+    if (
+      hasOnlyDataFields(value, ["type", "call"]) &&
+      value.type === "READ_TOOL" &&
+      isPlainObject(value.call) &&
+      hasOnlyDataFields(value.call, ["name", "arguments"]) &&
+      value.call.name === "GET_BODY_WEIGHT_HISTORY" &&
+      isPlainObject(value.call.arguments) &&
+      hasOnlyDataFields(value.call.arguments, [])
+    ) {
+      return {
+        type: "READ_TOOL",
+        call: { name: "GET_BODY_WEIGHT_HISTORY", arguments: {} },
+      };
+    }
+  } catch (error) {
+    if (error instanceof FoodDayTurnValidationError) throw error;
+  }
+  throw new FoodDayTurnValidationError("INVALID_MODEL_DECISION");
 }
 
 function parseDecision(value: unknown): FoodDayModelDecision {

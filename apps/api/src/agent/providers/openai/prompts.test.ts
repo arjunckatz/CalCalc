@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { decisionInstructions, finalizationInstructions } from "./prompts.js";
+import {
+  decisionInstructions,
+  finalizationInstructions,
+  finalizeOrReadInstructions,
+  terminalFinalizationInstructions,
+} from "./prompts.js";
 
 describe("FoodDay target-progress instructions", () => {
   it.each([
@@ -30,6 +35,32 @@ describe("FoodDay target-progress instructions", () => {
 });
 
 describe("body-weight observation policy", () => {
+  it.each([
+    ["first post-tool", finalizeOrReadInstructions],
+    ["terminal", terminalFinalizationInstructions],
+  ])("preserves successful mutation acknowledgment during %s", (_, text) => {
+    expect(text).toContain(
+      "When a requested mutation succeeded, explicitly acknowledge that completed action",
+    );
+    expect(text).toContain(
+      "a later canonical read may answer another part of the request but must not erase the mutation acknowledgment",
+    );
+    expect(text).toContain(
+      "Answer that read part from its authoritative result",
+    );
+    expect(text).toContain(
+      "Do not claim success for an absent or failed mutation result",
+    );
+    expect(text).toContain("without a verbose receipt");
+    expect(text).toContain(
+      "clearly say the reported weigh-in was logged, recorded, saved, or added",
+    );
+    expect(text).toContain(
+      "merely describing the latest history observation does not acknowledge this turn's log",
+    );
+    expect(text).toContain("without implying a new row on replay");
+  });
+
   it("requires an actual observation, explicit unit and supported current-message date", () => {
     expect(decisionInstructions).toContain("actual reported weigh-in");
     expect(decisionInstructions).toContain(
@@ -119,6 +150,48 @@ describe("body-weight observation policy", () => {
 });
 
 describe("canonical body-weight history policy", () => {
+  it("allows one model-selected fresh read after mutation without making every log a history query", () => {
+    expect(finalizeOrReadInstructions).toContain(
+      "If the user's still-unanswered supported request needs canonical body-weight history",
+    );
+    expect(finalizeOrReadInstructions).toContain(
+      "A history read is stale for post-mutation history when a successful LOG_BODY_WEIGHT follows it",
+    );
+    expect(finalizeOrReadInstructions).toContain(
+      "A read after the last successful LOG_BODY_WEIGHT is fresh for body-weight history, even if an unrelated food mutation follows",
+    );
+    expect(finalizeOrReadInstructions).toContain(
+      "For a simple weigh-in without a history question, answer without reading history",
+    );
+    expect(terminalFinalizationInstructions).toContain(
+      "No tools are available in this final step",
+    );
+    expect(terminalFinalizationInstructions).toContain(
+      "do not invent a missing canonical read",
+    );
+  });
+
+  it("asks for all supported intents in ordered batches without mentally patching history", () => {
+    expect(decisionInstructions).toContain(
+      "Fulfill all supported action and read intents in the current user turn",
+    );
+    expect(decisionInstructions).toContain(
+      "emit all required calls in one decision in executable order",
+    );
+    expect(decisionInstructions).toContain(
+      "a canonical read that must observe a mutation goes after that mutation",
+    );
+    expect(decisionInstructions).toContain(
+      "LOG_BODY_WEIGHT then GET_BODY_WEIGHT_HISTORY",
+    );
+    expect(decisionInstructions).toContain(
+      "Do not infer canonical history from a mutation result",
+    );
+    expect(decisionInstructions).toContain(
+      "even two dated observations do not authorize model-side arithmetic",
+    );
+  });
+
   it("selects the zero-argument read for canonical history without weakening correction safety", () => {
     expect(decisionInstructions).toContain(
       "Use the zero-argument GET_BODY_WEIGHT_HISTORY for questions about latest logged weight or measurement date, recent weigh-ins, canonical history, or a particular absolute date",
@@ -168,16 +241,37 @@ describe("canonical body-weight history policy", () => {
 
   it("orders a compound log before its read and refuses stale post-mutation claims", () => {
     expect(decisionInstructions).toContain(
-      "call LOG_BODY_WEIGHT before GET_BODY_WEIGHT_HISTORY",
+      "preferably emit both calls in one decision: LOG_BODY_WEIGHT before GET_BODY_WEIGHT_HISTORY",
     );
     expect(decisionInstructions).toContain(
-      "a read before a later LOG_BODY_WEIGHT is stale",
+      "Do not infer post-log history from the mutation result",
+    );
+    expect(decisionInstructions).toContain(
+      "a bounded post-tool step can request the missing read",
+    );
+    expect(decisionInstructions).toContain(
+      "A read before a later LOG_BODY_WEIGHT is stale",
     );
     expect(finalizationInstructions).toContain(
       "If that read precedes a later LOG_BODY_WEIGHT in the same turn, it is stale",
     );
     expect(finalizationInstructions).toContain(
       "must not be presented as post-mutation history or patched with guessed values",
+    );
+  });
+
+  it("limits pure weight calculations by capability, not by the amount of raw data", () => {
+    expect(decisionInstructions).toContain(
+      "For a pure body-weight trend, delta, average, rate, BMI, or weight-loss calculation request, return FINAL without tools",
+    );
+    expect(decisionInstructions).toContain(
+      "no deterministic calculation primitive exists",
+    );
+    expect(decisionInstructions).toContain(
+      "even two dated observations do not authorize model-side arithmetic",
+    );
+    expect(decisionInstructions).toContain(
+      "If raw history is also requested, read it and limit only the calculation",
     );
   });
 

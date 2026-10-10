@@ -59,7 +59,7 @@ describe("createFoodDayTurnRunner transcript composition", () => {
     const runTurn = createFoodDayTurnRunner({
       postgres,
       transactionRunner,
-      model: { decide: vi.fn(), finalize: vi.fn() },
+      model: { decide: vi.fn(), finalizeOrRead: vi.fn(), finalize: vi.fn() },
     });
     await expect(runTurn(input)).resolves.toEqual({ response: "Done." });
 
@@ -94,7 +94,7 @@ describe("createFoodDayTurnRunner transcript composition", () => {
     const runTurn = createFoodDayTurnRunner({
       postgres,
       transactionRunner: {} as PostgresTransactionRunner,
-      model: { decide: vi.fn(), finalize: vi.fn() },
+      model: { decide: vi.fn(), finalizeOrRead: vi.fn(), finalize: vi.fn() },
     });
     await expect(runTurn(input)).resolves.toEqual({
       response: "No observations.",

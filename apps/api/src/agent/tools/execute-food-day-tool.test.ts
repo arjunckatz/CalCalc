@@ -20,7 +20,10 @@ import { removeFoodEntryMutation } from "../../mutations/remove-food-entry.js";
 import { setFoodDayCompletenessMutation } from "../../mutations/set-food-day-completeness.js";
 import { updateFoodEntryMutation } from "../../mutations/update-food-entry.js";
 import { ToolValidationError } from "./food-day-tools.js";
-import { executeFoodDayTool } from "./execute-food-day-tool.js";
+import {
+  executeBodyWeightHistoryRead,
+  executeFoodDayTool,
+} from "./execute-food-day-tool.js";
 
 vi.mock("../../mutations/create-food-entry.js", () => ({
   createFoodEntryMutation: vi.fn(),
@@ -216,6 +219,36 @@ describe("executeFoodDayTool", () => {
       }),
     ).rejects.toBeInstanceOf(ToolValidationError);
     expect(readHistory).not.toHaveBeenCalled();
+  });
+
+  it("uses the same owner-scoped canonical projection for continuation without mutation identity", async () => {
+    readHistory.mockResolvedValueOnce({
+      recentObservations: [],
+      latestMeasurementDate: null,
+      latestDateObservations: [],
+    });
+    expect(
+      await executeBodyWeightHistoryRead(
+        dependencies,
+        trustedContext.trustedUserId,
+      ),
+    ).toEqual({
+      name: "GET_BODY_WEIGHT_HISTORY",
+      result: {
+        recentObservations: [],
+        recentHistoryMayBeTruncated: false,
+        latestMeasurementDate: null,
+        latestDateObservationCount: 0,
+        latestDateObservations: [],
+        latestDateObservationsComplete: true,
+      },
+    });
+    expect(readHistory).toHaveBeenCalledExactlyOnceWith(
+      trustedContext.trustedUserId,
+      30,
+    );
+    expect(weightMutation).not.toHaveBeenCalled();
+    expect(createMutation).not.toHaveBeenCalled();
   });
 
   it("propagates a canonical history query failure without invoking mutation machinery", async () => {

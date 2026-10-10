@@ -264,7 +264,7 @@ describe("OpenAI FoodDay decision binding", () => {
     expect(requestAt(create).input).not.toContain("do-not-send");
   });
 
-  it("offers exactly seven functions with auto selection and disables response storage", async () => {
+  it("offers exactly seven strict functions, permits multiple calls, and disables response storage", async () => {
     const { create, model } = setup();
     await model.decide(decisionInput("Hello"));
     const request = requestAt(create);
@@ -280,6 +280,10 @@ describe("OpenAI FoodDay decision binding", () => {
       "GET_BODY_WEIGHT_HISTORY",
     ]);
     expect(request.tool_choice).toBe("auto");
+    expect(request.parallel_tool_calls).toBe(true);
+    expect(
+      (request.tools as { strict: boolean }[]).every((tool) => tool.strict),
+    ).toBe(true);
     expect(request.store).toBe(false);
   });
 
@@ -419,6 +423,47 @@ describe("OpenAI FoodDay decision binding", () => {
     }
   });
 
+  it("preserves LOG_BODY_WEIGHT then GET_BODY_WEIGHT_HISTORY from one provider response", async () => {
+    const weight = {
+      localDate: "2026-10-06",
+      sourceValue: "80",
+      sourceUnit: "KG",
+    };
+    const { model } = setup(
+      response("", [
+        functionCall("LOG_BODY_WEIGHT", weight, "call_weight"),
+        functionCall("GET_BODY_WEIGHT_HISTORY", {}, "call_history"),
+      ]),
+    );
+    expect(
+      await model.decide(
+        decisionInput("I weighed 80 kg today. What's my latest weight?"),
+      ),
+    ).toEqual({
+      type: "TOOLS",
+      calls: [
+        { name: "LOG_BODY_WEIGHT", arguments: weight },
+        { name: "GET_BODY_WEIGHT_HISTORY", arguments: {} },
+      ],
+    });
+  });
+
+  it("rejects a malformed second function call instead of silently dropping it", async () => {
+    const { model } = setup(
+      response("", [
+        functionCall("LOG_BODY_WEIGHT", {
+          localDate: "2026-10-06",
+          sourceValue: "80",
+          sourceUnit: "KG",
+        }),
+        { ...functionCall("GET_BODY_WEIGHT_HISTORY", {}), arguments: "{bad" },
+      ]),
+    );
+    await expect(
+      model.decide(decisionInput("Log and read")),
+    ).rejects.toMatchObject({ reason: "INVALID_FUNCTION_ARGUMENTS" });
+  });
+
   it("ignores incidental decision text when a function call exists", async () => {
     const { model } = setup(
       response("Do not surface this.", [
@@ -504,6 +549,83 @@ describe("OpenAI FoodDay decision binding", () => {
 });
 
 describe("OpenAI FoodDay finalization binding", () => {
+  it("offers only the strict history read during first post-tool finalization", async () => {
+    const { create, model } = setup(response("  Logged your weigh-in.  "));
+    expect(
+      await model.finalizeOrRead(finalizationInput("Log my weight")),
+    ).toEqual({
+      type: "FINAL",
+      text: "Logged your weigh-in.",
+    });
+    const request = requestAt(create);
+    expect(request.tools as { name: string; strict: boolean }[]).toMatchObject([
+      { name: "GET_BODY_WEIGHT_HISTORY", strict: true },
+    ]);
+    expect(request.tool_choice).toBe("auto");
+    expect(request.parallel_tool_calls).toBe(false);
+    expect(request.store).toBe(false);
+    expect(request.instructions).toContain("do not request a redundant read");
+  });
+
+  it("parses a strict zero-argument continuation history read", async () => {
+    const { model } = setup(
+      response("", [functionCall("GET_BODY_WEIGHT_HISTORY", {})]),
+    );
+    expect(
+      await model.finalizeOrRead(finalizationInput("Latest weight?")),
+    ).toEqual({
+      type: "READ_TOOL",
+      call: { name: "GET_BODY_WEIGHT_HISTORY", arguments: {} },
+    });
+  });
+
+  it("prioritizes a continuation read over incidental response text", async () => {
+    const { model } = setup(
+      response("Partial answer must not finalize.", [
+        functionCall("GET_BODY_WEIGHT_HISTORY", {}),
+      ]),
+    );
+    expect(
+      await model.finalizeOrRead(finalizationInput("Latest weight?")),
+    ).toEqual({
+      type: "READ_TOOL",
+      call: { name: "GET_BODY_WEIGHT_HISTORY", arguments: {} },
+    });
+  });
+
+  it("rejects mutation, extra read arguments, and multiple continuation calls", async () => {
+    for (const calls of [
+      [functionCall("LOG_BODY_WEIGHT", { sourceValue: "80" })],
+      [functionCall("GET_BODY_WEIGHT_HISTORY", { limit: 1 })],
+      [functionCall("GET_BODY_WEIGHT_HISTORY", { userId: "other" })],
+      [
+        functionCall("GET_BODY_WEIGHT_HISTORY", {
+          localDate: "2026-10-06",
+        }),
+      ],
+      [functionCall("GET_BODY_WEIGHT_HISTORY", { anything: true })],
+      [
+        functionCall("GET_BODY_WEIGHT_HISTORY", {}, "call_1"),
+        functionCall("GET_BODY_WEIGHT_HISTORY", {}, "call_2"),
+      ],
+    ]) {
+      const { model } = setup(response("", calls));
+      await expect(
+        model.finalizeOrRead(finalizationInput("Latest weight?")),
+      ).rejects.toBeInstanceOf(OpenAIFoodDayModelProtocolError);
+    }
+  });
+
+  it("offers no tools after a continuation read", async () => {
+    const { create, model } = setup(response("80 kg on October 6."));
+    await model.finalize(finalizationInput("Latest weight?"));
+    expect(requestAt(create)).not.toHaveProperty("tools");
+    expect(requestAt(create)).not.toHaveProperty("tool_choice");
+    expect(requestAt(create).instructions).toContain(
+      "No tools are available in this final step",
+    );
+  });
+
   it("finalizes from authoritative tool results without recomputing calendar context", async () => {
     const { create, model } = setup();
     await model.finalize({

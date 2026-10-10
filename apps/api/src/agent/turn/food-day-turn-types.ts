@@ -36,9 +36,23 @@ export interface FoodDayModelFinalizationInput extends FoodDayModelDecisionInput
   readonly toolResults: readonly FoodDayToolResult[];
 }
 
+export type FoodDayModelFinalizationStep =
+  | { readonly type: "FINAL"; readonly text: string }
+  | {
+      readonly type: "READ_TOOL";
+      readonly call: {
+        readonly name: "GET_BODY_WEIGHT_HISTORY";
+        readonly arguments: Readonly<Record<string, never>>;
+      };
+    };
+
 /** Provider-neutral interface; runtime protocol checks still treat responses as untrusted. */
 export interface FoodDayTurnModel {
   decide(input: FoodDayModelDecisionInput): Promise<FoodDayModelDecision>;
+  finalizeOrRead(
+    input: FoodDayModelFinalizationInput,
+  ): Promise<FoodDayModelFinalizationStep>;
+  /** Tool-free terminal response, used at most once after a continuation read. */
   finalize(input: FoodDayModelFinalizationInput): Promise<string>;
 }
 

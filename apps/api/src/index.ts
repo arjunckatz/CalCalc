@@ -82,6 +82,7 @@ export type {
   FoodDayModelDecision,
   FoodDayModelDecisionInput,
   FoodDayModelFinalizationInput,
+  FoodDayModelFinalizationStep,
   FoodDayTurnInput,
   FoodDayTurnModel,
   FoodDayTurnPublicResult,

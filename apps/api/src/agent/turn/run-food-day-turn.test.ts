@@ -8,6 +8,7 @@ import {
 import type { FoodDayState } from "../../state/build-food-day-state.js";
 import { getFoodDayState } from "../../state/get-food-day-state.js";
 import {
+  executeBodyWeightHistoryRead,
   executeFoodDayTool,
   type FoodDayToolResult,
 } from "../tools/execute-food-day-tool.js";
@@ -31,10 +32,12 @@ vi.mock("../../state/get-food-day-state.js", () => ({
 }));
 vi.mock("../tools/execute-food-day-tool.js", () => ({
   executeFoodDayTool: vi.fn(),
+  executeBodyWeightHistoryRead: vi.fn(),
 }));
 
 const stateQuery = vi.mocked(getFoodDayState);
 const toolExecutor = vi.mocked(executeFoodDayTool);
+const continuationRead = vi.mocked(executeBodyWeightHistoryRead);
 const trustedInput: FoodDayTurnInput = {
   trustedUserId: "10000000-0000-4000-8000-000000000001",
   foodDayId: "20000000-0000-4000-8000-000000000001",
@@ -181,8 +184,13 @@ const historyResult: FoodDayToolResult = {
 function setup(decision: unknown = { type: "FINAL", text: "Lunch noted." }) {
   const decide = vi.fn<FoodDayTurnModel["decide"]>();
   const finalize = vi.fn<FoodDayTurnModel["finalize"]>();
+  const finalizeOrRead = vi.fn<FoodDayTurnModel["finalizeOrRead"]>();
   decide.mockResolvedValue(decision as FoodDayModelDecision);
   finalize.mockResolvedValue("Lunch recorded.");
+  finalizeOrRead.mockImplementation(async (input) => ({
+    type: "FINAL",
+    text: await finalize(input),
+  }));
   const loadRecentTranscript =
     vi.fn<RunFoodDayTurnDependencies["loadRecentTranscript"]>();
   loadRecentTranscript.mockResolvedValue(recentTranscript);
@@ -191,10 +199,16 @@ function setup(decision: unknown = { type: "FINAL", text: "Lunch noted." }) {
     foodEntries: { listActiveByFoodDay: vi.fn() },
     bodyWeights: { readHistory: vi.fn() },
     transactionRunner: { runInTransaction: vi.fn() },
-    model: { decide, finalize },
+    model: { decide, finalizeOrRead, finalize },
     loadRecentTranscript,
   };
-  return { dependencies, decide, finalize, loadRecentTranscript };
+  return {
+    dependencies,
+    decide,
+    finalizeOrRead,
+    finalize,
+    loadRecentTranscript,
+  };
 }
 
 async function rejected(promise: Promise<unknown>): Promise<unknown> {
@@ -210,6 +224,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   stateQuery.mockResolvedValue(initialState);
   toolExecutor.mockResolvedValue(logResult);
+  continuationRead.mockResolvedValue(historyResult);
 });
 
 describe("runFoodDayTurn input and initial STATE", () => {
@@ -816,7 +831,7 @@ describe("runFoodDayTurn failure boundaries", () => {
   it("propagates a first-tool typed failure unchanged and runs no later call", async () => {
     const cause = new DomainValidationError("Invalid correction.");
     toolExecutor.mockRejectedValueOnce(cause);
-    const { dependencies, finalize } = setup({
+    const { dependencies, finalizeOrRead, finalize } = setup({
       type: "TOOLS",
       calls: [logCall, updateCall],
     });
@@ -824,6 +839,7 @@ describe("runFoodDayTurn failure boundaries", () => {
       cause,
     );
     expect(toolExecutor).toHaveBeenCalledTimes(1);
+    expect(finalizeOrRead).not.toHaveBeenCalled();
     expect(finalize).not.toHaveBeenCalled();
   });
 
@@ -864,7 +880,7 @@ describe("runFoodDayTurn failure boundaries", () => {
     toolExecutor
       .mockResolvedValueOnce(logResult)
       .mockRejectedValueOnce(new Error("failed"));
-    const { dependencies, finalize } = setup({
+    const { dependencies, finalizeOrRead, finalize } = setup({
       type: "TOOLS",
       calls: [logCall, updateCall, removeCall],
     });
@@ -872,6 +888,7 @@ describe("runFoodDayTurn failure boundaries", () => {
       runFoodDayTurn(dependencies, trustedInput),
     ).rejects.toBeInstanceOf(FoodDayTurnExecutionError);
     expect(toolExecutor).toHaveBeenCalledTimes(2);
+    expect(finalizeOrRead).not.toHaveBeenCalled();
     expect(finalize).not.toHaveBeenCalled();
   });
 
@@ -896,5 +913,252 @@ describe("runFoodDayTurn failure boundaries", () => {
       cause,
     );
     expect(toolExecutor).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runFoodDayTurn bounded canonical-read continuation", () => {
+  const freshWeightCall = {
+    ...weightCall,
+    arguments: { ...weightCall.arguments, localDate: "2026-10-06" },
+  };
+  const freshWeightResult: FoodDayToolResult = {
+    ...weightResult,
+    result: {
+      ...weightResult.result,
+      weightEntry: {
+        ...weightResult.result.weightEntry,
+        localDate: "2026-10-06",
+      },
+    },
+  };
+  const freshHistoryResult: FoodDayToolResult = {
+    ...historyResult,
+    result: {
+      ...historyResult.result,
+      latestMeasurementDate: "2026-10-06",
+      recentObservations: historyResult.result.recentObservations.map(
+        (item) => ({
+          ...item,
+          localDate: "2026-10-06",
+        }),
+      ),
+      latestDateObservations: historyResult.result.latestDateObservations.map(
+        (item) => ({
+          ...item,
+          localDate: "2026-10-06",
+        }),
+      ),
+    },
+  };
+  const readStep = {
+    type: "READ_TOOL" as const,
+    call: { name: "GET_BODY_WEIGHT_HISTORY" as const, arguments: {} },
+  };
+
+  it("finishes an initial history read without a duplicate continuation read", async () => {
+    toolExecutor.mockResolvedValueOnce(historyResult);
+    const { dependencies, decide, finalizeOrRead, finalize } = setup({
+      type: "TOOLS",
+      calls: [historyCall],
+    });
+    finalizeOrRead.mockResolvedValueOnce({
+      type: "FINAL",
+      text: "History read.",
+    });
+    const result = await runFoodDayTurn(dependencies, trustedInput);
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(toolExecutor).toHaveBeenCalledExactlyOnceWith(
+      dependencies,
+      expect.any(Object),
+      historyCall,
+    );
+    expect(finalizeOrRead).toHaveBeenCalledTimes(1);
+    expect(continuationRead).not.toHaveBeenCalled();
+    expect(finalize).not.toHaveBeenCalled();
+    expect(result.toolResults).toEqual([historyResult]);
+  });
+
+  it("does not automatically read history for a simple successful weigh-in", async () => {
+    toolExecutor.mockResolvedValueOnce(freshWeightResult);
+    const { dependencies, finalizeOrRead, finalize } = setup({
+      type: "TOOLS",
+      calls: [freshWeightCall],
+    });
+    finalizeOrRead.mockResolvedValueOnce({
+      type: "FINAL",
+      text: "Logged 80 kg for October 6.",
+    });
+    const result = await runFoodDayTurn(dependencies, trustedInput);
+    expect(result.toolResults).toEqual([freshWeightResult]);
+    expect(continuationRead).not.toHaveBeenCalled();
+    expect(finalize).not.toHaveBeenCalled();
+  });
+
+  it("recovers F from an initial LOG-only decision with one ordered read", async () => {
+    const events: string[] = [];
+    const { dependencies, decide, finalizeOrRead, finalize } = setup({
+      type: "TOOLS",
+      calls: [freshWeightCall],
+    });
+    decide.mockImplementationOnce(async () => {
+      events.push("decide");
+      return { type: "TOOLS", calls: [freshWeightCall] };
+    });
+    toolExecutor.mockImplementationOnce(async () => {
+      events.push("LOG");
+      return freshWeightResult;
+    });
+    finalizeOrRead.mockImplementationOnce(async (input) => {
+      events.push("finalize-or-read");
+      expect(input.toolResults).toEqual([freshWeightResult]);
+      return readStep;
+    });
+    continuationRead.mockImplementationOnce(async (_dependencies, userId) => {
+      events.push("GET");
+      expect(userId).toBe(trustedInput.trustedUserId);
+      return freshHistoryResult;
+    });
+    finalize.mockImplementationOnce(async (input) => {
+      events.push("final-finalization");
+      expect(input.toolResults).toEqual([
+        freshWeightResult,
+        freshHistoryResult,
+      ]);
+      return "80 kg on October 6.";
+    });
+
+    const result = await runFoodDayTurn(dependencies, {
+      ...trustedInput,
+      userMessage: "I weighed 80 kg today. What's my latest weight?",
+    });
+    expect(events).toEqual([
+      "decide",
+      "LOG",
+      "finalize-or-read",
+      "GET",
+      "final-finalization",
+    ]);
+    expect(result.toolResults).toEqual([freshWeightResult, freshHistoryResult]);
+    expect(result.response).toBe("80 kg on October 6.");
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
+    expect(continuationRead).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains the ideal initial LOG then GET batch without continuation", async () => {
+    toolExecutor
+      .mockResolvedValueOnce(freshWeightResult)
+      .mockResolvedValueOnce(freshHistoryResult);
+    const { dependencies, finalizeOrRead, finalize } = setup({
+      type: "TOOLS",
+      calls: [freshWeightCall, historyCall],
+    });
+    finalizeOrRead.mockResolvedValueOnce({
+      type: "FINAL",
+      text: "History read.",
+    });
+    const result = await runFoodDayTurn(dependencies, trustedInput);
+    expect(toolExecutor.mock.calls.map(([, , call]) => call)).toEqual([
+      freshWeightCall,
+      historyCall,
+    ]);
+    expect(finalizeOrRead).toHaveBeenCalledTimes(1);
+    expect(continuationRead).not.toHaveBeenCalled();
+    expect(finalize).not.toHaveBeenCalled();
+    expect(result.toolResults).toEqual([freshWeightResult, freshHistoryResult]);
+  });
+
+  it("repairs stale GET then LOG with a final fresh GET in true execution order", async () => {
+    const staleHistory = historyResult;
+    toolExecutor
+      .mockResolvedValueOnce(staleHistory)
+      .mockResolvedValueOnce(freshWeightResult);
+    const { dependencies, finalizeOrRead, finalize } = setup({
+      type: "TOOLS",
+      calls: [historyCall, freshWeightCall],
+    });
+    continuationRead.mockResolvedValueOnce(freshHistoryResult);
+    finalizeOrRead.mockResolvedValueOnce(readStep);
+    const result = await runFoodDayTurn(dependencies, trustedInput);
+    expect(finalizeOrRead.mock.calls[0]?.[0].toolResults).toEqual([
+      staleHistory,
+      freshWeightResult,
+    ]);
+    expect(finalize.mock.calls[0]?.[0].toolResults).toEqual([
+      staleHistory,
+      freshWeightResult,
+      freshHistoryResult,
+    ]);
+    expect(result.toolResults).toEqual([
+      staleHistory,
+      freshWeightResult,
+      freshHistoryResult,
+    ]);
+  });
+
+  it("rejects a mutation continuation before any additional tool executes", async () => {
+    const { dependencies, finalizeOrRead, finalize } = setup({
+      type: "TOOLS",
+      calls: [weightCall],
+    });
+    finalizeOrRead.mockResolvedValueOnce({
+      type: "READ_TOOL",
+      call: weightCall,
+    } as unknown as Awaited<ReturnType<FoodDayTurnModel["finalizeOrRead"]>>);
+    await expect(
+      runFoodDayTurn(dependencies, trustedInput),
+    ).rejects.toMatchObject({
+      reason: "INVALID_MODEL_DECISION",
+    });
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
+    expect(continuationRead).not.toHaveBeenCalled();
+    expect(finalize).not.toHaveBeenCalled();
+  });
+
+  it("does not allow a second continuation after the final read", async () => {
+    const { dependencies, finalizeOrRead, finalize } = setup({
+      type: "TOOLS",
+      calls: [weightCall],
+    });
+    finalizeOrRead.mockResolvedValueOnce(readStep);
+    finalize.mockResolvedValueOnce({
+      type: "READ_TOOL",
+      call: historyCall,
+    } as unknown as string);
+    await expect(
+      runFoodDayTurn(dependencies, trustedInput),
+    ).rejects.toMatchObject({
+      reason: "INVALID_FINAL_TEXT",
+    });
+    expect(finalizeOrRead).toHaveBeenCalledTimes(1);
+    expect(continuationRead).toHaveBeenCalledTimes(1);
+    expect(finalize).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails on continuation read error without fabricating final history", async () => {
+    const failure = new Error("read unavailable");
+    continuationRead.mockRejectedValueOnce(failure);
+    const { dependencies, finalizeOrRead, finalize } = setup({
+      type: "TOOLS",
+      calls: [weightCall],
+    });
+    finalizeOrRead.mockResolvedValueOnce(readStep);
+    await expect(runFoodDayTurn(dependencies, trustedInput)).rejects.toBe(
+      failure,
+    );
+    expect(finalize).not.toHaveBeenCalled();
+  });
+
+  it("keeps the initial mutation slot key stable across incomplete retries", async () => {
+    const { dependencies, finalizeOrRead } = setup({
+      type: "TOOLS",
+      calls: [weightCall],
+    });
+    finalizeOrRead.mockResolvedValue(readStep);
+    await runFoodDayTurn(dependencies, trustedInput);
+    await runFoodDayTurn(dependencies, trustedInput);
+    expect(toolExecutor.mock.calls[0]?.[1].idempotencyKey).toBe(
+      toolExecutor.mock.calls[1]?.[1].idempotencyKey,
+    );
+    expect(continuationRead).toHaveBeenCalledTimes(2);
   });
 });

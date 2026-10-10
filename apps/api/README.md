@@ -255,6 +255,15 @@ tool results, generated child keys, operation identity, and provider metadata ar
 not public HTTP fields. The STATE returned internally by M4B2 is the initial
 pre-mutation snapshot and is deliberately not exposed as current state.
 
+After initial tools execute in order, one model step may either answer or request
+the strict, zero-argument `GET_BODY_WEIGHT_HISTORY` read. The read uses the same
+trusted owner-scoped query and projection as an initial history tool call; no
+mutation tool is offered in this continuation. A requested read is appended to
+the ordered results before one tool-free final response. Thus a no-tool turn
+uses one model call, an initial-tool turn normally uses two, and a turn needing
+the single read continuation uses at most three. There is no recursive tool
+loop or transaction spanning model calls.
+
 The HTTP key is the trusted turn key; M4B2 derives mutation child keys from that
 key and zero-based tool slots. After a successful turn response is durably
 recorded, an exact retry for the same trusted user, FoodDay, key, message, and
@@ -390,8 +399,30 @@ The internal `getBodyWeightHistory` application query reads owner-scoped canonic
 observations with a fixed 30-observation recent bound. `latestMeasurementDate`
 is the maximum observation local date; `latestDateObservations` retains every
 observation on that date, including multiple same-day weigh-ins. `createdAt`
-only breaks presentation ties and is not measurement time. This is not yet an
-HTTP or conversational read tool, a current-weight field, or trend math.
+only breaks presentation ties and is not measurement time. The conversation model
+can request the bounded, owner-scoped history through `GET_BODY_WEIGHT_HISTORY`;
+there is no separate HTTP history route, current-weight field, or trend math.
+
+M4D7C adds an opt-in live semantic eval. With `OPENAI_API_KEY` and
+`OPENAI_MODEL` set locally, run
+`corepack pnpm --filter @cal-calc/api eval:openai:body-weight-history-semantics`.
+Its eight synthetic cases exercise the production OpenAI adapter, prompts, parser,
+and finalizer with fabricated authoritative history tool results. They cover
+canonical empty/unique/ambiguous latest-date answers, raw and bounded history,
+ordered log-then-read or one post-log read continuation, unsupported trend math,
+and stale read-before-log refresh. F accepts either an initial LOG/GET batch or
+LOG followed by one read continuation; H tests a fresh read after GET/LOG.
+Canonical history must outrank transcript; historical M4D5 case G now expects
+the read tool because that capability did not exist during its earlier live run.
+The harness performs no database read or backend mutation, is excluded from
+normal tests/CI, disables retries, and makes at most 16 Responses calls on a
+successful full run (F uses two or three). Owner semantic evidence is complete
+across runs, not from one clean 8/8 invocation: A's safe empty-history answer
+and H's safe fresh-read answer have exact captured-output detector regressions;
+B–E passed live; F passed a targeted live continuation after the acknowledgment
+repair; G passed targeted live after the unsupported-calculation policy repair;
+and H's fresh continuation read executed live before its safe final answer. No
+further paid rerun is required for this slice.
 
 ## Application-owned mutation identity
 

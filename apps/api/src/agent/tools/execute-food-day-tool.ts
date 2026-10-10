@@ -177,13 +177,21 @@ export async function executeFoodDayTool(
         }),
       };
     case "GET_BODY_WEIGHT_HISTORY":
-      return {
-        name: call.name,
-        result: projectBodyWeightHistory(
-          await getBodyWeightHistory(dependencies, { trustedUserId }),
-        ),
-      };
+      return executeBodyWeightHistoryRead(dependencies, trustedUserId);
   }
+}
+
+/** Trusted, side-effect-free read shared by initial and continuation phases. */
+export async function executeBodyWeightHistoryRead(
+  dependencies: GetBodyWeightHistoryDependencies,
+  trustedUserId: string,
+): Promise<Extract<FoodDayToolResult, { name: "GET_BODY_WEIGHT_HISTORY" }>> {
+  return {
+    name: "GET_BODY_WEIGHT_HISTORY",
+    result: projectBodyWeightHistory(
+      await getBodyWeightHistory(dependencies, { trustedUserId }),
+    ),
+  };
 }
 
 function mentionsSupportedDate(

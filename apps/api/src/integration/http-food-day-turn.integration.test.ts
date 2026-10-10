@@ -127,7 +127,14 @@ const finalize = vi.fn<FoodDayTurnModel["finalize"]>(async (input) => {
   }
   return "Logged 200 g of yogurt.";
 });
-const model: FoodDayTurnModel = { decide, finalize };
+const model: FoodDayTurnModel = {
+  decide,
+  finalizeOrRead: async (input) => ({
+    type: "FINAL",
+    text: await finalize(input),
+  }),
+  finalize,
+};
 const app = createApiApp({
   authVerifier: createSupabaseAccessTokenVerifier({
     supabaseUrl,
