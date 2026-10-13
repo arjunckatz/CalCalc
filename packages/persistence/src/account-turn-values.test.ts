@@ -29,6 +29,23 @@ describe("account turn value boundaries", () => {
     ).toThrow();
   });
 
+  it("round-trips the versioned accepted date-time snapshot through JSONB-shaped data", () => {
+    const accepted = {
+      schema: "client-calendar-v2",
+      currentLocalDateTime: "2026-10-13T20:34:12.123+05:30",
+      timeZone: "Asia/Calcutta",
+    };
+    expect(
+      parseAccountTurnCalendarSnapshot(JSON.parse(JSON.stringify(accepted))),
+    ).toEqual(accepted);
+    expect(() =>
+      parseAccountTurnCalendarSnapshot({ ...accepted, userId: "untrusted" }),
+    ).toThrow();
+    expect(() =>
+      parseAccountTurnCalendarSnapshot({ ...accepted, timeZone: 42 }),
+    ).toThrow();
+  });
+
   it("accepts only bounded, ordered, JSON-data-only internal slots", () => {
     const parsed = parseAccountTurnPlan({
       schema: "account-turn-plan-v1",

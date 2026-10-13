@@ -113,6 +113,7 @@ export {
 } from "./resolve-food-day-target.js";
 export { foodDayCompletenessValues } from "./types.js";
 export type {
+  AcceptedAccountTurnCalendarSnapshot,
   AccountTurnCalendarSnapshot,
   AccountTurnPlan,
   AccountTurnPlanAction,

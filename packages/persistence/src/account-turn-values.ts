@@ -64,6 +64,20 @@ export function parseAccountTurnCalendarSnapshot(
 ): AccountTurnCalendarSnapshot {
   if (value === null) return null;
   if (
+    recordWithKeys(value, ["schema", "currentLocalDateTime", "timeZone"]) &&
+    value.schema === "client-calendar-v2" &&
+    typeof value.currentLocalDateTime === "string" &&
+    value.currentLocalDateTime !== "" &&
+    typeof value.timeZone === "string" &&
+    value.timeZone !== ""
+  ) {
+    return {
+      schema: "client-calendar-v2",
+      currentLocalDateTime: value.currentLocalDateTime,
+      timeZone: value.timeZone,
+    };
+  }
+  if (
     !recordWithKeys(value, ["schema", "currentLocalDate"]) ||
     value.schema !== "client-calendar-v1" ||
     !validDate(value.currentLocalDate)

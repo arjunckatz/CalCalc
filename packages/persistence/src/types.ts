@@ -107,10 +107,22 @@ export interface PersistedConversation {
 export type AccountTurnStatus = "PENDING" | "COMPLETED";
 
 /** Versioned, accepted client context; not a verified physical clock. */
-export type AccountTurnCalendarSnapshot = null | {
-  readonly schema: "client-calendar-v1";
-  readonly currentLocalDate: string;
-};
+export type AccountTurnCalendarSnapshot =
+  | null
+  | {
+      readonly schema: "client-calendar-v1";
+      readonly currentLocalDate: string;
+    }
+  | {
+      readonly schema: "client-calendar-v2";
+      readonly currentLocalDateTime: string;
+      readonly timeZone: string;
+    };
+
+export type AcceptedAccountTurnCalendarSnapshot = Extract<
+  AccountTurnCalendarSnapshot,
+  { readonly schema: "client-calendar-v2" }
+>;
 
 export type AccountTurnPlanAction =
   | "LOG_FOOD"

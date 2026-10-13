@@ -1,8 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
-  parseAccountTurnCalendarSnapshot,
-  type AccountTurnCalendarSnapshot,
   type AccountTurnClaim,
   type PostgresAccountConversationTurnRepository,
 } from "@cal-calc/persistence";
@@ -11,6 +9,11 @@ import {
   parseIdempotencyKey,
   type IdempotencyKey,
 } from "../mutations/mutation-identity.js";
+import {
+  acceptCalendarContext,
+  type AcceptedCalendarContext,
+  type RawCalendarContext,
+} from "./calendar-context.js";
 
 const namespace = "calcalc:account-turn:v1";
 const uuidPattern =
@@ -20,7 +23,7 @@ export interface AccountTurnRequest {
   readonly trustedUserId: string;
   readonly idempotencyKey: IdempotencyKey;
   readonly userMessage: string;
-  readonly calendarContext: AccountTurnCalendarSnapshot;
+  readonly calendarContext?: RawCalendarContext | null;
 }
 
 export interface AccountTurnIdentity {
@@ -28,7 +31,7 @@ export interface AccountTurnIdentity {
   readonly turnKey: string;
   readonly requestFingerprint: string;
   readonly userMessage: string;
-  readonly calendarContext: AccountTurnCalendarSnapshot;
+  readonly calendarContext: AcceptedCalendarContext | null;
 }
 
 /** Freeze accepted request meaning before any asynchronous repository work. */
@@ -49,9 +52,7 @@ export function deriveAccountTurnIdentity(
   }
   const userId = input.trustedUserId.toLowerCase();
   const key = parseIdempotencyKey(input.idempotencyKey);
-  const calendarContext = parseAccountTurnCalendarSnapshot(
-    input.calendarContext,
-  );
+  const calendarContext = acceptCalendarContext(input.calendarContext);
   const digest = (parts: readonly unknown[]) =>
     createHash("sha256").update(JSON.stringify(parts), "utf8").digest("hex");
   return {
