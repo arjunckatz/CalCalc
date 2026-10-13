@@ -96,6 +96,56 @@ export interface PersistedFoodDayTurnResult {
   readonly createdAt: string;
 }
 
+export interface PersistedConversation {
+  readonly userId: string;
+  readonly activeFoodDayId: string | null;
+  readonly version: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export type AccountTurnStatus = "PENDING" | "COMPLETED";
+
+/** Versioned, accepted client context; not a verified physical clock. */
+export type AccountTurnCalendarSnapshot = null | {
+  readonly schema: "client-calendar-v1";
+  readonly currentLocalDate: string;
+};
+
+export type AccountTurnPlanAction =
+  | "LOG_FOOD"
+  | "UPDATE_FOOD_QUANTITY"
+  | "REMOVE_FOOD"
+  | "CHANGE_FOOD_STATUS"
+  | "SET_FOOD_DAY_COMPLETENESS"
+  | "LOG_BODY_WEIGHT"
+  | "GET_BODY_WEIGHT_HISTORY";
+
+/** Internal normalized commands only; future execution still validates each action. */
+export interface AccountTurnPlan {
+  readonly schema: "account-turn-plan-v1";
+  readonly slots: readonly {
+    readonly index: number;
+    readonly action: AccountTurnPlanAction;
+    readonly command: JsonObject;
+  }[];
+}
+
+export interface PersistedAccountTurn {
+  readonly id: string;
+  readonly userId: string;
+  readonly turnKey: string;
+  readonly requestFingerprint: string;
+  readonly userMessage: string;
+  readonly calendarContext: AccountTurnCalendarSnapshot;
+  readonly status: AccountTurnStatus;
+  readonly resolvedFoodDayId: string | null;
+  readonly executionPlan: AccountTurnPlan | null;
+  readonly response: string | null;
+  readonly createdAt: string;
+  readonly completedAt: string | null;
+}
+
 export interface FoodDayRow {
   readonly id: string;
   readonly user_id: string;

@@ -1,4 +1,26 @@
 export {
+  AccountTurnIdempotencyConflictError,
+  AccountTurnNotFoundError,
+  AccountTurnStateConflictError,
+  PostgresAccountConversationTurnRepository,
+  RECENT_ACCOUNT_TURN_LIMIT,
+  type AccountTranscriptItem,
+  type AccountTurnClaim,
+  type AccountTurnCompletion,
+  type AccountTurnKeyInput,
+  type ClaimAccountTurnInput,
+} from "./postgres/account-conversation-turn-repository.js";
+export {
+  parseAccountTurnCalendarSnapshot,
+  parseAccountTurnPlan,
+} from "./account-turn-values.js";
+export {
+  ConversationNotFoundError,
+  ConversationPointerNoChangeError,
+  ConversationVersionConflictError,
+  PostgresConversationRepository,
+} from "./postgres/conversation-repository.js";
+export {
   fromFoodDayRow,
   fromFoodEntryRow,
   toFoodDayRow,
@@ -91,6 +113,12 @@ export {
 } from "./resolve-food-day-target.js";
 export { foodDayCompletenessValues } from "./types.js";
 export type {
+  AccountTurnCalendarSnapshot,
+  AccountTurnPlan,
+  AccountTurnPlanAction,
+  AccountTurnStatus,
+  PersistedAccountTurn,
+  PersistedConversation,
   BodyWeightEntryRow,
   PersistedBodyWeightEntry,
   ConsumedTimePrecision,

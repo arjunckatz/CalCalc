@@ -1,5 +1,18 @@
 # Persistence contract
 
+The M5A1 account-conversation substrate is separate from legacy FoodDay turn
+results. One `conversations` row per account stores a nullable advisory active
+FoodDay pointer and versioned compare-and-set updates. New `conversation_turns`
+claim a pending account-scoped retry key before future model work, retain the
+exact accepted message and calendar snapshot, lock a bounded versioned internal
+tool plan once, and complete once with an exact public response. Recent account
+transcript reads return only the newest eight completed pairs in chronological
+order. No routing, automatic FoodDay creation, model call, HTTP route, or legacy
+turn migration is part of M5A1; account transcript initially contains only new
+account-turn rows. The new tables expose no direct authenticated client grants
+or RLS policies. Real PostgreSQL concurrency/ownership proof is opt-in through
+`test:integration` after applying the forward migration.
+
 PostgreSQL `numeric` is the canonical exact storage for quantities, nutrition
 bases, and target snapshots. Nutrition values inside JSONB are canonical M1
 decimal strings.
