@@ -6,6 +6,9 @@ import type {
   FoodEntryRow,
   PersistedFoodEntry,
 } from "../types.js";
+import type { BoundedRows } from "./food-day-repository.js";
+
+export const MAX_ROUTING_ENTRY_REFERENCES = 16;
 
 export interface PostgresExecutor {
   query(
@@ -134,6 +137,30 @@ export class PostgresFoodEntryRepository {
     return result.rows.map(
       (row) => fromFoodEntryRow(row as FoodEntryRow).entry,
     );
+  }
+
+  /** Bounded, owner-scoped canonical references from candidate days only. */
+  async listRecentRoutingReferences(
+    userId: string,
+    foodDayIds: readonly string[],
+  ): Promise<BoundedRows<PersistedFoodEntry>> {
+    if (foodDayIds.length === 0) return { items: [], hasMore: false };
+    const result = await this.executor.query(
+      `select ${foodEntryResultColumns}
+       from public.food_entries
+       where user_id = $1
+         and food_day_id = any($2::uuid[])
+         and deleted_at is null
+       order by created_at desc, id desc
+       limit $3`,
+      [userId, [...foodDayIds], MAX_ROUTING_ENTRY_REFERENCES + 1],
+    );
+    return {
+      items: result.rows
+        .slice(0, MAX_ROUTING_ENTRY_REFERENCES)
+        .map((row) => fromFoodEntryRow(row as FoodEntryRow)),
+      hasMore: result.rows.length > MAX_ROUTING_ENTRY_REFERENCES,
+    };
   }
 
   async update(input: UpdateFoodEntryRecord): Promise<PersistedFoodEntry> {

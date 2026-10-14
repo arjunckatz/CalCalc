@@ -10,9 +10,17 @@ import type {
   PersistedAccountTurn,
 } from "../types.js";
 import type { PostgresExecutor } from "./food-entry-repository.js";
+import type { BoundedRows } from "./food-day-repository.js";
 import { PostgresConversationRepository } from "./conversation-repository.js";
 
 export const RECENT_ACCOUNT_TURN_LIMIT = 8;
+export const MAX_RECENT_RESOLVED_TURNS = 8;
+
+export interface ResolvedTurnReference {
+  readonly foodDayId: string;
+  readonly turnId: string;
+  readonly createdAt: string;
+}
 
 export interface ClaimAccountTurnInput {
   readonly id: string;
@@ -229,6 +237,38 @@ export class PostgresAccountConversationTurnRepository {
         return { userMessage: row.user_message, response: row.response };
       })
       .reverse();
+  }
+
+  /** Internal routing metadata; not the public transcript projection. */
+  async listRecentResolvedTargets(
+    userId: string,
+  ): Promise<BoundedRows<ResolvedTurnReference>> {
+    const result = await this.executor.query(
+      `select id, resolved_food_day_id,
+              to_jsonb(created_at) #>> '{}' as created_at
+       from public.conversation_turns
+       where user_id = $1 and status = 'COMPLETED'
+         and resolved_food_day_id is not null
+       order by created_at desc, id desc
+       limit $2`,
+      [userId, MAX_RECENT_RESOLVED_TURNS + 1],
+    );
+    const items = result.rows.slice(0, MAX_RECENT_RESOLVED_TURNS).map((row) => {
+      if (
+        !isRecord(row) ||
+        typeof row.id !== "string" ||
+        typeof row.resolved_food_day_id !== "string" ||
+        typeof row.created_at !== "string"
+      ) {
+        throw new TypeError("Invalid resolved account turn reference row.");
+      }
+      return {
+        turnId: row.id,
+        foodDayId: row.resolved_food_day_id,
+        createdAt: row.created_at,
+      };
+    });
+    return { items, hasMore: result.rows.length > MAX_RECENT_RESOLVED_TURNS };
   }
 
   private async requireMatching(

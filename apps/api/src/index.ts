@@ -25,6 +25,17 @@ export { PostgresPoolTransactionRunner } from "./postgres/transaction-runner.js"
 export { createApiApp, type ApiAppDependencies } from "./http/app.js";
 export { createApiHostFromEnvironment, type ApiHost } from "./host.js";
 export {
+  buildRoutingContext,
+  listExplicitDateRoutingCandidates,
+  RoutingCandidateNotFoundError,
+  RoutingContextIntegrityError,
+  type CanonicalRoutingDay,
+  type CanonicalRoutingEntry,
+  type ModelSafeRoutingContext,
+  type RoutingRepositories,
+  type RoutingSnapshot,
+} from "./conversation/routing-context.js";
+export {
   listFoodEntriesForFoodDay,
   InvalidFoodDayIdError,
   type ListFoodEntriesForFoodDayDependencies,

@@ -136,6 +136,41 @@ describe("PostgresFoodDayRepository", () => {
     expect(executor.calls[0]?.values).toEqual([userId, localDate]);
   });
 
+  it("bounds owner-scoped same-date routing candidates with N+1 completeness", async () => {
+    const rows = Array.from({ length: 9 }, (_, index) =>
+      foodDayRow(
+        testFoodDay(
+          `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        ),
+      ),
+    );
+    const executor = new ScriptedExecutor([rows]);
+    const result = await new PostgresFoodDayRepository(
+      executor,
+    ).listRoutingCandidatesByLocalDate(userId, localDate);
+    expect(result.items).toHaveLength(8);
+    expect(result.hasMore).toBe(true);
+    expect(normalizeSql(executor.calls[0]?.queryText)).toContain(
+      "where user_id = $1 and local_date = $2::date order by opened_at asc, id asc limit $3",
+    );
+    expect(executor.calls[0]?.values).toEqual([userId, localDate, 9]);
+  });
+
+  it("batch-hydrates only owner-scoped routing day IDs", async () => {
+    const foodDay = testFoodDay(firstDayId);
+    const executor = new ScriptedExecutor([[foodDayRow(foodDay)]]);
+    const repository = new PostgresFoodDayRepository(executor);
+    expect(await repository.findOwnedByIds(userId, [firstDayId])).toMatchObject(
+      [{ userId, foodDay }],
+    );
+    expect(normalizeSql(executor.calls[0]?.queryText)).toContain(
+      "where user_id = $1 and id = any($2::uuid[])",
+    );
+    expect(executor.calls[0]?.values).toEqual([userId, [firstDayId]]);
+    expect(await repository.findOwnedByIds(userId, [])).toEqual([]);
+    expect(executor.calls).toHaveLength(1);
+  });
+
   it("returns all owned OPEN and PROVISIONAL candidates in deterministic descending order", async () => {
     const older = { ...testFoodDay(firstDayId), status: "OPEN" as const };
     const newer = testFoodDay(secondDayId);

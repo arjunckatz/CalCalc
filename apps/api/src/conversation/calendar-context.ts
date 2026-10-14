@@ -82,10 +82,7 @@ export function deriveCalendarFacts(
 }
 
 export function previousCalendarDate(localDate: string): string {
-  const match = datePattern.exec(localDate);
-  if (match === null) {
-    throw new CalendarContextValidationError("INVALID_DATE_TIME");
-  }
+  const match = datePattern.exec(acceptLocalDate(localDate))!;
   let year = Number(match[1]);
   let month = Number(match[2]);
   let day = Number(match[3]);
@@ -102,6 +99,16 @@ export function previousCalendarDate(localDate: string): string {
   }
   day = daysInMonth(year, month);
   return formatDate(year, month, day);
+}
+
+/** Validate an already-recognized explicit civil date; no phrase inference. */
+export function acceptLocalDate(value: string): string {
+  const match = typeof value === "string" ? datePattern.exec(value) : null;
+  if (match === null) {
+    throw new CalendarContextValidationError("INVALID_DATE_TIME");
+  }
+  validateDate(Number(match[1]), Number(match[2]), Number(match[3]));
+  return value;
 }
 
 function inspectCalendarContext(value: unknown): {

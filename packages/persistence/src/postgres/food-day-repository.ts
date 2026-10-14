@@ -28,6 +28,13 @@ export interface SetFoodDayCompletenessRecord {
   readonly targetCompleteness: FoodDayCompleteness;
 }
 
+export const MAX_ROUTING_DAYS_PER_DATE = 8;
+
+export interface BoundedRows<Row> {
+  readonly items: readonly Row[];
+  readonly hasMore: boolean;
+}
+
 export class FoodDayNotFoundError extends Error {
   override readonly name = "FoodDayNotFoundError";
 
@@ -98,6 +105,43 @@ export class PostgresFoodDayRepository {
          and local_date = $2::date
        order by opened_at asc, id asc`,
       [userId, localDate],
+    );
+    return result.rows.map((row) => fromFoodDayRow(parseFoodDayRow(row)));
+  }
+
+  /** All owned same-date candidates up to a fixed bound; never implies uniqueness if hasMore. */
+  async listRoutingCandidatesByLocalDate(
+    userId: string,
+    localDate: string,
+  ): Promise<BoundedRows<PersistedFoodDay>> {
+    const result = await this.executor.query(
+      `select ${foodDayResultColumns}
+       from public.food_days
+       where user_id = $1 and local_date = $2::date
+       order by opened_at asc, id asc
+       limit $3`,
+      [userId, localDate, MAX_ROUTING_DAYS_PER_DATE + 1],
+    );
+    return {
+      items: result.rows
+        .slice(0, MAX_ROUTING_DAYS_PER_DATE)
+        .map((row) => fromFoodDayRow(parseFoodDayRow(row))),
+      hasMore: result.rows.length > MAX_ROUTING_DAYS_PER_DATE,
+    };
+  }
+
+  /** Batch hydration remains owner-scoped even for IDs from internal references. */
+  async findOwnedByIds(
+    userId: string,
+    foodDayIds: readonly string[],
+  ): Promise<readonly PersistedFoodDay[]> {
+    if (foodDayIds.length === 0) return [];
+    const result = await this.executor.query(
+      `select ${foodDayResultColumns}
+       from public.food_days
+       where user_id = $1 and id = any($2::uuid[])
+       order by opened_at asc, id asc`,
+      [userId, [...foodDayIds]],
     );
     return result.rows.map((row) => fromFoodDayRow(parseFoodDayRow(row)));
   }

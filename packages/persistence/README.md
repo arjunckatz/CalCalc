@@ -111,6 +111,14 @@ FoodDay in stable opened-time and ID order; persistence does not select an
 active day, enforce one day per date, or apply midnight rollover policy. Its
 real PostgreSQL coverage remains opt-in through `test:integration`.
 
+Routing reads add an eight-day owner/local-date N+1 lookup, an eight-turn
+completed/resolved account reference window, and sixteen recent non-deleted
+entries from an explicit bounded candidate-day scope. Each returns `hasMore`
+instead of making truncated results appear exhaustive. Day ID hydration and
+entry reads remain owner-scoped; the application alone projects opaque tokens.
+The targeted routing index covers owner/local-date lookup order. The opt-in
+PostgreSQL routing integration test is included in `test:integration`.
+
 Conservative FoodDay target resolution is separate from repository queries.
 Explicit IDs resolve ownership-scoped, including CLOSED days, and missing IDs
 never fall back. Implicit targeting resolves only a sole OPEN/PROVISIONAL day;

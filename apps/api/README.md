@@ -424,6 +424,25 @@ repair; G passed targeted live after the unsupported-calculation policy repair;
 and H's fresh continuation read executed live before its safe final answer. No
 further paid rerun is required for this slice.
 
+## Account routing candidate context (M5A3)
+
+`buildRoutingContext` reads a bounded, owner-scoped set of canonical FoodDay
+candidates and non-deleted FoodEntry references. It does not select or create a
+day or update the active pointer. The active pointer is a continuity hint, and
+multiple days on the same local date remain distinct. Without accepted calendar
+context, today/yesterday are unavailable rather than empty query results.
+
+Date queries expose up to eight days each, recent resolved completed turns scan
+eight, and entry references expose up to sixteen. Every bounded collection
+reports overflow; entry scope also reports when candidate-day discovery is
+incomplete. Tokens are deterministic for the constructed snapshot, contain no
+raw UUID, and resolve only through that snapshot's internal membership map.
+The projection is evidence, not a lock: a later resolver must recheck ownership,
+candidate identity, current revision, and mutation preconditions before writes.
+The builder uses short independent reads, with no transaction across future
+model execution. The explicit-date primitive accepts an already-recognized
+Gregorian local date; it does not parse user prose.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`

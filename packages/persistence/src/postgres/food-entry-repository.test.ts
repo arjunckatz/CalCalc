@@ -41,6 +41,33 @@ class ScriptedExecutor implements PostgresExecutor {
 }
 
 describe("PostgresFoodEntryRepository", () => {
+  it("bounds recent non-deleted references to owned candidate days", async () => {
+    const rows = Array.from({ length: 17 }, (_, index) =>
+      rowFor({
+        ...testEntry(),
+        id: `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      }),
+    );
+    const executor = new ScriptedExecutor([rows]);
+    const repository = new PostgresFoodEntryRepository(executor);
+    const result = await repository.listRecentRoutingReferences(userId, [
+      foodDayId,
+    ]);
+    expect(result.items).toHaveLength(16);
+    expect(result.hasMore).toBe(true);
+    const sql = normalizeSql(executor.calls[0]?.queryText);
+    expect(sql).toContain(
+      "where user_id = $1 and food_day_id = any($2::uuid[]) and deleted_at is null",
+    );
+    expect(sql).toContain("order by created_at desc, id desc limit $3");
+    expect(executor.calls[0]?.values).toEqual([userId, [foodDayId], 17]);
+    expect(await repository.listRecentRoutingReferences(userId, [])).toEqual({
+      items: [],
+      hasMore: false,
+    });
+    expect(executor.calls).toHaveLength(1);
+  });
+
   it("creates with canonical serialized values and hydrates the returned row", async () => {
     const entry = testEntry();
     const executor = new ScriptedExecutor([[rowFor(entry)]]);

@@ -55,6 +55,29 @@ function key() {
 }
 
 describe("PostgresAccountConversationTurnRepository", () => {
+  it("reads only bounded completed resolved target metadata in deterministic order", async () => {
+    const rows = Array.from({ length: 9 }, (_, index) => ({
+      id: `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      resolved_food_day_id: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      created_at: timestamp,
+    }));
+    const executor = new ScriptedExecutor([rows]);
+    const result = await new PostgresAccountConversationTurnRepository(
+      executor,
+    ).listRecentResolvedTargets(userId);
+    expect(result.items).toHaveLength(8);
+    expect(result.hasMore).toBe(true);
+    expect(result.items[0]).toEqual({
+      turnId: rows[0]?.id,
+      foodDayId: rows[0]?.resolved_food_day_id,
+      createdAt: timestamp,
+    });
+    expect(executor.calls[0]?.sql.replaceAll(/\s+/g, " ")).toContain(
+      "where user_id = $1 and status = 'COMPLETED' and resolved_food_day_id is not null order by created_at desc, id desc limit $2",
+    );
+    expect(executor.calls[0]?.values).toEqual([userId, 9]);
+  });
+
   it("claims pending before future work and returns matching pending replay", async () => {
     const claim = {
       id,
