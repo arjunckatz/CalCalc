@@ -36,6 +36,18 @@ export {
   type RoutingSnapshot,
 } from "./conversation/routing-context.js";
 export {
+  resolveFoodDayTarget,
+  FoodDayTargetResolutionError,
+  type FoodDayTargetResolutionInput,
+  type FoodDayTargetResolutionModel,
+  type ValidatedFoodDayTarget,
+} from "./conversation/resolve-food-day-target.js";
+export {
+  createOpenAIFoodDayTargetModel,
+  OpenAIFoodDayTargetModelError,
+  type OpenAIFoodDayTargetModelConfig,
+} from "./conversation/providers/openai/openai-food-day-target-model.js";
+export {
   listFoodEntriesForFoodDay,
   InvalidFoodDayIdError,
   type ListFoodEntriesForFoodDayDependencies,

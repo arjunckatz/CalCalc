@@ -443,6 +443,28 @@ The builder uses short independent reads, with no transaction across future
 model execution. The explicit-date primitive accepts an already-recognized
 Gregorian local date; it does not parse user prose.
 
+## Semantic target resolution (M5A4)
+
+`resolveFoodDayTarget` makes one read-only semantic decision from the exact
+message, accepted calendar context, and M5A3 model-safe projection. It returns
+an existing day, an existing entry reference with its trusted parent day and
+snapshot revision, an exact date target, dayless, or a clarification question.
+The OpenAI adapter is injected, tool-free, stateless, and uses strict structured
+output. Backend token validation uses the exact snapshot maps; no canonical IDs
+are sent in the routing projection. A validated result is only snapshot evidence:
+future writes must recheck ownership, existence, revision, and preconditions.
+This slice neither selects an account default nor creates a day or mutates state.
+After structural and snapshot validation, a deterministic backend policy turns
+ambiguous date/day proposals into a stable clarification when bounded candidate
+discovery cannot establish uniqueness. Invalid dates and unknown tokens remain
+typed errors; a trusted entry reference is not discarded just because a date
+bucket is incomplete. No second model call is made.
+
+The opt-in `corepack pnpm --filter @cal-calc/api eval:openai:food-day-target-semantics`
+uses the real OpenAI API and requires `OPENAI_API_KEY` and `OPENAI_MODEL`. It is
+excluded from normal tests, disables retries, makes at most twelve Responses
+calls, and covers twelve focused routing cases. It does not access a database.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`
