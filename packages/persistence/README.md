@@ -13,6 +13,14 @@ account-turn rows. The new tables expose no direct authenticated client grants
 or RLS policies. Real PostgreSQL concurrency/ownership proof is opt-in through
 `test:integration` after applying the forward migration.
 
+M5A5 adds nullable internal `routing_resolution`, separate from `execution_plan`.
+Only trusted, versioned canonical resolutions are stored; JSONB is strictly
+rehydrated on every read. `setRoutingResolutionOnce` atomically sets the
+resolution and owned `resolved_food_day_id` (or NULL), with first-writer-wins
+convergence under concurrent attempts. The existing owner FK, restrictive
+grants/RLS, completed-row immutability, and pending-turn claim rules remain in
+force. Apply the forward migration before running its opt-in PostgreSQL test.
+
 PostgreSQL `numeric` is the canonical exact storage for quantities, nutrition
 bases, and target snapshots. Nutrition values inside JSONB are canonical M1
 decimal strings.

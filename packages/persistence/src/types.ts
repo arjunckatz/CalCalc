@@ -143,6 +143,35 @@ export interface AccountTurnPlan {
   }[];
 }
 
+/** Trusted, durable orchestration checkpoint; never a model token or execution plan. */
+export type AccountTurnRoutingResolution =
+  | {
+      readonly schema: "account-routing-resolution-v1";
+      readonly kind: "EXISTING_DAY";
+      readonly foodDayId: string;
+    }
+  | {
+      readonly schema: "account-routing-resolution-v1";
+      readonly kind: "EXISTING_ENTRY_REFERENCE";
+      readonly foodDayId: string;
+      readonly entryId: string;
+      readonly revision: number;
+    }
+  | {
+      readonly schema: "account-routing-resolution-v1";
+      readonly kind: "DATE_TARGET";
+      readonly localDate: string;
+    }
+  | {
+      readonly schema: "account-routing-resolution-v1";
+      readonly kind: "DAYLESS";
+    }
+  | {
+      readonly schema: "account-routing-resolution-v1";
+      readonly kind: "CLARIFY";
+      readonly question: string;
+    };
+
 export interface PersistedAccountTurn {
   readonly id: string;
   readonly userId: string;
@@ -152,6 +181,7 @@ export interface PersistedAccountTurn {
   readonly calendarContext: AccountTurnCalendarSnapshot;
   readonly status: AccountTurnStatus;
   readonly resolvedFoodDayId: string | null;
+  readonly routingResolution: AccountTurnRoutingResolution | null;
   readonly executionPlan: AccountTurnPlan | null;
   readonly response: string | null;
   readonly createdAt: string;

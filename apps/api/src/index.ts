@@ -43,6 +43,12 @@ export {
   type ValidatedFoodDayTarget,
 } from "./conversation/resolve-food-day-target.js";
 export {
+  runAccountConversationTurn,
+  type AccountConversationTurnDependencies,
+  type AccountConversationTurnResult,
+  type RunAccountConversationTurnRequest,
+} from "./conversation/run-account-conversation-turn.js";
+export {
   createOpenAIFoodDayTargetModel,
   OpenAIFoodDayTargetModelError,
   type OpenAIFoodDayTargetModelConfig,

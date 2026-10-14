@@ -192,6 +192,7 @@ function fixture(scenario: Scenario) {
       activeDayToken: scenario.days.find((day) => day.active)?.token ?? null,
       today: { dayTokens: today, hasMore: scenario.todayHasMore ?? false },
       yesterday: { dayTokens: yesterday, hasMore: false },
+      explicitDate: null,
       recentDays: { dayTokens: [], hasMoreTurns: false },
       days,
       recentEntryReferences: {

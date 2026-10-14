@@ -241,12 +241,12 @@ function applyRoutingAmbiguityPolicy(
       : previousCalendarDate(facts.localDate);
   if (proposal.kind === "DATE_TARGET") {
     const bucket =
-      facts === null
-        ? null
-        : proposal.localDate === facts.localDate
-          ? projection.today
-          : proposal.localDate === previous
-            ? projection.yesterday
+      proposal.localDate === facts?.localDate
+        ? projection.today
+        : proposal.localDate === previous
+          ? projection.yesterday
+          : projection.explicitDate?.localDate === proposal.localDate
+            ? projection.explicitDate
             : null;
     // An existing day or incomplete discovery makes a date alone insufficient.
     if (
@@ -263,12 +263,12 @@ function applyRoutingAmbiguityPolicy(
   if (selected === undefined)
     throw new FoodDayTargetResolutionError("UNKNOWN_DAY_TOKEN");
   const bucket =
-    facts === null
-      ? null
-      : selected.localDate === facts.localDate
-        ? projection.today
-        : selected.localDate === previous
-          ? projection.yesterday
+    selected.localDate === facts?.localDate
+      ? projection.today
+      : selected.localDate === previous
+        ? projection.yesterday
+        : projection.explicitDate?.localDate === selected.localDate
+          ? projection.explicitDate
           : null;
   const incompleteDateBucket =
     bucket !== null && bucket !== undefined && bucket.hasMore;

@@ -21,6 +21,7 @@ const input: FoodDayTargetResolutionInput = {
     activeDayToken: "day_snapshot_1",
     today: { dayTokens: ["day_snapshot_1"], hasMore: true },
     yesterday: { dayTokens: [], hasMore: false },
+    explicitDate: null,
     recentDays: { dayTokens: [], hasMoreTurns: true },
     days: [
       {

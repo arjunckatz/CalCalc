@@ -29,6 +29,7 @@ function snapshot(suffix = "a", hasMore = false): RoutingSnapshot {
       activeDayToken: dayToken,
       today: { dayTokens: [dayToken], hasMore },
       yesterday: { dayTokens: [], hasMore: false },
+      explicitDate: null,
       recentDays: { dayTokens: [dayToken], hasMoreTurns: hasMore },
       days: [
         {
@@ -419,6 +420,27 @@ describe("deterministic canonical ambiguity backstop", () => {
         input(empty, "Today I had pasta."),
       ),
     ).toEqual({ kind: "DATE_TARGET", localDate: "2026-10-14" });
+  });
+
+  it("does not trust an explicit-date target when its canonical lookup is truncated", () => {
+    const base = snapshot();
+    const route: RoutingSnapshot = {
+      ...base,
+      projection: {
+        ...base.projection,
+        explicitDate: {
+          localDate: "2026-10-10",
+          dayTokens: [],
+          hasMore: true,
+        },
+      },
+    };
+    expect(
+      validateFoodDayTargetDecision(
+        { kind: "DATE_TARGET", localDate: "2026-10-10" },
+        input(route, "On 2026-10-10 I had pasta."),
+      ),
+    ).toEqual(clarification);
   });
 
   it("clarifies complete same-date multiplicity unless selection has conversational provenance", () => {

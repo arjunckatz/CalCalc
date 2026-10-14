@@ -442,6 +442,9 @@ candidate identity, current revision, and mutation preconditions before writes.
 The builder uses short independent reads, with no transaction across future
 model execution. The explicit-date primitive accepts an already-recognized
 Gregorian local date; it does not parse user prose.
+M5A5 can supply one strictly validated literal ISO date to this builder; its
+bounded candidates and `hasMore` flag join the same model-safe snapshot. More
+than one distinct literal date is not silently reduced to one query.
 
 ## Semantic target resolution (M5A4)
 
@@ -464,6 +467,27 @@ The opt-in `corepack pnpm --filter @cal-calc/api eval:openai:food-day-target-sem
 uses the real OpenAI API and requires `OPENAI_API_KEY` and `OPENAI_MODEL`. It is
 excluded from normal tests, disables retries, makes at most twelve Responses
 calls, and covers twelve focused routing cases. It does not access a database.
+
+## Durable account-turn routing checkpoint (M5A5)
+
+`runAccountConversationTurn` claims an account-scoped retry before semantic work.
+An already-completed turn replays its exact public response; a pending turn with
+a persisted routing resolution replays that resolution without rebuilding
+candidate context or resampling the model. Otherwise the coordinator reads the
+bounded routing snapshot, makes one M5A4 resolution call, and persists the
+trusted, versioned result once. A strictly validated literal ISO date gets a
+bounded candidate lookup; multiple distinct or invalid literals clarify
+without guessing. A pre-persistence crash may resample, while a post-persistence
+retry returns the first durable winner. No row lock spans model execution.
+
+M5A5 leaves every newly resolved turn PENDING, including CLARIFY and DAYLESS.
+It neither writes an execution plan or active pointer nor loads FoodDay STATE,
+creates FoodDays, executes tools, or completes a public response. Future slices
+must revalidate canonical ownership, existence, and revision before execution;
+clarification follow-ups may need separately designed bounded conversation
+context. Existing-day routing can later hydrate scoped STATE, entry references
+need parent/revision revalidation, date targets need requery or lazy creation,
+and dayless/clarify need their own account-level completion policies.
 
 ## Application-owned mutation identity
 

@@ -15,6 +15,7 @@ export {
 export {
   parseAccountTurnCalendarSnapshot,
   parseAccountTurnPlan,
+  parseAccountTurnRoutingResolution,
 } from "./account-turn-values.js";
 export {
   ConversationNotFoundError,
@@ -122,6 +123,7 @@ export type {
   AccountTurnCalendarSnapshot,
   AccountTurnPlan,
   AccountTurnPlanAction,
+  AccountTurnRoutingResolution,
   AccountTurnStatus,
   PersistedAccountTurn,
   PersistedConversation,

@@ -97,6 +97,7 @@ function fixtures(
     active?: PersistedFoodDay;
     today?: BoundedRows<PersistedFoodDay>;
     yesterday?: BoundedRows<PersistedFoodDay>;
+    explicit?: BoundedRows<PersistedFoodDay>;
     recent?: BoundedRows<ResolvedTurnReference>;
     otherDays?: readonly PersistedFoodDay[];
     entries?: BoundedRows<PersistedFoodEntry>;
@@ -106,6 +107,7 @@ function fixtures(
     ...(options.active === undefined ? [] : [options.active]),
     ...(options.today?.items ?? []),
     ...(options.yesterday?.items ?? []),
+    ...(options.explicit?.items ?? []),
     ...(options.otherDays ?? []),
   ];
   const find = (foodDayId: string) =>
@@ -125,7 +127,9 @@ function fixtures(
     async (_userId: string, localDate: string) =>
       localDate === "2026-01-01"
         ? (options.today ?? bounded([]))
-        : (options.yesterday ?? bounded([])),
+        : localDate === "2025-12-31"
+          ? (options.yesterday ?? bounded([]))
+          : (options.explicit ?? bounded([])),
   );
   const findById = vi.fn(async (_userId: string, foodDayId: string) =>
     find(foodDayId),
@@ -180,6 +184,7 @@ describe("canonical account routing context", () => {
       activeDayToken: null,
       today: null,
       yesterday: null,
+      explicitDate: null,
       days: [],
       recentEntryReferences: {
         items: [],
@@ -326,6 +331,45 @@ describe("canonical account routing context", () => {
       ),
     ).rejects.toThrow();
     expect(data.listRoutingCandidatesByLocalDate).toHaveBeenCalledTimes(1);
+  });
+
+  it("includes a bounded explicit ISO-date bucket before semantic resolution", async () => {
+    const first = day(7, "2025-12-30");
+    const second = day(8, "2025-12-30");
+    const data = fixtures({ explicit: bounded([first, second], true) });
+    const snapshot = await buildRoutingContext(data.repositories, {
+      trustedUserId: userId,
+      calendarContext: calendar,
+      explicitLocalDate: "2025-12-30",
+    });
+    expect(
+      data.listRoutingCandidatesByLocalDate.mock.calls.map((call) => call[1]),
+    ).toEqual(["2026-01-01", "2025-12-31", "2025-12-30"]);
+    expect(snapshot.projection.explicitDate).toMatchObject({
+      localDate: "2025-12-30",
+      hasMore: true,
+      dayTokens: expect.any(Array),
+    });
+    expect(snapshot.projection.explicitDate?.dayTokens).toHaveLength(2);
+    expect(snapshot.projection.days).toHaveLength(2);
+    expect(snapshot.projection.days[0]?.sources).toContain(
+      "EXPLICIT_LOCAL_DATE",
+    );
+    expect(JSON.stringify(snapshot.projection)).not.toContain(first.foodDay.id);
+    expect(
+      snapshot.projection.recentEntryReferences.candidateDayScopeComplete,
+    ).toBe(false);
+    const priorCount = data.listRoutingCandidatesByLocalDate.mock.calls.length;
+    await expect(
+      buildRoutingContext(data.repositories, {
+        trustedUserId: userId,
+        calendarContext: calendar,
+        explicitLocalDate: "2026-02-30",
+      }),
+    ).rejects.toThrow();
+    expect(data.listRoutingCandidatesByLocalDate).toHaveBeenCalledTimes(
+      priorCount,
+    );
   });
 
   it("links bounded canonical entry references to day tokens, preserving revision and status", async () => {

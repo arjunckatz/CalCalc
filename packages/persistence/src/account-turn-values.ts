@@ -2,6 +2,7 @@ import type {
   AccountTurnCalendarSnapshot,
   AccountTurnPlan,
   AccountTurnPlanAction,
+  AccountTurnRoutingResolution,
   JsonObject,
   JsonValue,
 } from "./types.js";
@@ -15,6 +16,95 @@ const actions: readonly AccountTurnPlanAction[] = [
   "LOG_BODY_WEIGHT",
   "GET_BODY_WEIGHT_HISTORY",
 ];
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const uuidTextPattern =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const tokenPattern = /\b(?:day|entry)_[a-z0-9_]+\b/i;
+
+/** Revalidate JSONB on every hydration, including version and exact variant keys. */
+export function parseAccountTurnRoutingResolution(
+  value: unknown,
+): AccountTurnRoutingResolution {
+  if (
+    !isPlainRecord(value) ||
+    value.schema !== "account-routing-resolution-v1"
+  ) {
+    throw new TypeError("Invalid account turn routing resolution.");
+  }
+  switch (value.kind) {
+    case "EXISTING_DAY":
+      if (
+        recordWithKeys(value, ["schema", "kind", "foodDayId"]) &&
+        validUuid(value.foodDayId)
+      )
+        return {
+          schema: "account-routing-resolution-v1",
+          kind: "EXISTING_DAY",
+          foodDayId: value.foodDayId,
+        };
+      break;
+    case "EXISTING_ENTRY_REFERENCE":
+      if (
+        recordWithKeys(value, [
+          "schema",
+          "kind",
+          "foodDayId",
+          "entryId",
+          "revision",
+        ]) &&
+        validUuid(value.foodDayId) &&
+        validUuid(value.entryId) &&
+        Number.isSafeInteger(value.revision) &&
+        (value.revision as number) > 0
+      )
+        return {
+          schema: "account-routing-resolution-v1",
+          kind: "EXISTING_ENTRY_REFERENCE",
+          foodDayId: value.foodDayId,
+          entryId: value.entryId,
+          revision: value.revision as number,
+        };
+      break;
+    case "DATE_TARGET":
+      if (
+        recordWithKeys(value, ["schema", "kind", "localDate"]) &&
+        validDate(value.localDate)
+      )
+        return {
+          schema: "account-routing-resolution-v1",
+          kind: "DATE_TARGET",
+          localDate: value.localDate,
+        };
+      break;
+    case "DAYLESS":
+      if (recordWithKeys(value, ["schema", "kind"]))
+        return { schema: "account-routing-resolution-v1", kind: "DAYLESS" };
+      break;
+    case "CLARIFY":
+      if (
+        recordWithKeys(value, ["schema", "kind", "question"]) &&
+        typeof value.question === "string" &&
+        value.question.trim() === value.question &&
+        value.question.length > 0 &&
+        value.question.length <= 240 &&
+        !uuidTextPattern.test(value.question) &&
+        !tokenPattern.test(value.question)
+      )
+        return {
+          schema: "account-routing-resolution-v1",
+          kind: "CLARIFY",
+          question: value.question,
+        };
+      break;
+  }
+  throw new TypeError("Invalid account turn routing resolution.");
+}
+
+function validUuid(value: unknown): value is string {
+  return typeof value === "string" && uuidPattern.test(value);
+}
 
 /** A shape/size-validated internal plan, not raw provider output. */
 export function parseAccountTurnPlan(value: unknown): AccountTurnPlan {

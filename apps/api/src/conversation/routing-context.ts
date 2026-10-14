@@ -30,6 +30,7 @@ export type RoutingDaySource =
   | "ACTIVE_POINTER"
   | "CURRENT_LOCAL_DATE"
   | "PREVIOUS_LOCAL_DATE"
+  | "EXPLICIT_LOCAL_DATE"
   | "RECENT_COMPLETED_TURN";
 
 export interface ModelSafeRoutingDay {
@@ -60,6 +61,12 @@ export interface ModelSafeRoutingContext {
     readonly hasMore: boolean;
   } | null;
   readonly yesterday: {
+    readonly dayTokens: readonly string[];
+    readonly hasMore: boolean;
+  } | null;
+  /** One strictly validated literal ISO date, never inferred from prose. */
+  readonly explicitDate: {
+    readonly localDate: string;
     readonly dayTokens: readonly string[];
     readonly hasMore: boolean;
   } | null;
@@ -147,11 +154,16 @@ export async function buildRoutingContext(
   input: {
     readonly trustedUserId: string;
     readonly calendarContext: AcceptedCalendarContext | null;
+    readonly explicitLocalDate?: string | null;
   },
 ): Promise<RoutingSnapshot> {
   const userId = requireTrustedUserId(input.trustedUserId);
   const calendar = input.calendarContext;
   const facts = calendar === null ? null : deriveCalendarFacts(calendar);
+  const explicitLocalDate =
+    input.explicitLocalDate === null || input.explicitLocalDate === undefined
+      ? null
+      : acceptLocalDate(input.explicitLocalDate);
   const conversation = await repositories.conversations.findByUser(userId);
   const activeId = conversation?.activeFoodDayId ?? null;
   const today =
@@ -170,6 +182,19 @@ export async function buildRoutingContext(
           userId,
           previousCalendarDate(facts.localDate),
         );
+  const explicitDate =
+    explicitLocalDate === null
+      ? null
+      : explicitLocalDate === facts?.localDate
+        ? today
+        : facts !== null &&
+            explicitLocalDate === previousCalendarDate(facts.localDate)
+          ? yesterday
+          : await listExplicitDateRoutingCandidates(
+              repositories.days,
+              userId,
+              explicitLocalDate,
+            );
   const recentTurns =
     await repositories.turns.listRecentResolvedTargets(userId);
 
@@ -188,6 +213,7 @@ export async function buildRoutingContext(
 
   for (const day of today?.items ?? []) add(day, "CURRENT_LOCAL_DATE");
   for (const day of yesterday?.items ?? []) add(day, "PREVIOUS_LOCAL_DATE");
+  for (const day of explicitDate?.items ?? []) add(day, "EXPLICIT_LOCAL_DATE");
 
   const recentIds = [
     ...new Set(recentTurns.items.map((turn) => turn.foodDayId)),
@@ -251,6 +277,8 @@ export async function buildRoutingContext(
     activeId,
     today,
     yesterday,
+    explicitLocalDate,
+    explicitDate,
     recentTurns,
     orderedDays,
     orderedEntries,
@@ -264,6 +292,8 @@ function projectCanonicalContext(input: {
   activeId: string | null;
   today: BoundedRows<PersistedFoodDay> | null;
   yesterday: BoundedRows<PersistedFoodDay> | null;
+  explicitLocalDate: string | null;
+  explicitDate: BoundedRows<PersistedFoodDay> | null;
   recentTurns: Awaited<
     ReturnType<RoutingRepositories["turns"]["listRecentResolvedTargets"]>
   >;
@@ -298,9 +328,12 @@ function projectCanonicalContext(input: {
         ]),
         input.today?.items.map((day) => day.foodDay.id) ?? null,
         input.yesterday?.items.map((day) => day.foodDay.id) ?? null,
+        input.explicitLocalDate,
+        input.explicitDate?.items.map((day) => day.foodDay.id) ?? null,
         input.recentTurns.items.map((turn) => [turn.turnId, turn.foodDayId]),
         input.today?.hasMore ?? null,
         input.yesterday?.hasMore ?? null,
+        input.explicitDate?.hasMore ?? null,
         input.recentTurns.hasMore,
         input.entryHasMore,
       ]),
@@ -377,6 +410,14 @@ function projectCanonicalContext(input: {
             dayTokens: tokens(input.yesterday.items),
             hasMore: input.yesterday.hasMore,
           },
+    explicitDate:
+      input.explicitDate === null || input.explicitLocalDate === null
+        ? null
+        : {
+            localDate: input.explicitLocalDate,
+            dayTokens: tokens(input.explicitDate.items),
+            hasMore: input.explicitDate.hasMore,
+          },
     recentDays: {
       dayTokens: recentTokens,
       hasMoreTurns: input.recentTurns.hasMore,
@@ -389,6 +430,7 @@ function projectCanonicalContext(input: {
         input.calendar !== null &&
         !input.today?.hasMore &&
         !input.yesterday?.hasMore &&
+        !input.explicitDate?.hasMore &&
         !input.recentTurns.hasMore,
     },
     bounds: {

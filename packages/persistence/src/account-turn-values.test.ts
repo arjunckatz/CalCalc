@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseAccountTurnCalendarSnapshot,
   parseAccountTurnPlan,
+  parseAccountTurnRoutingResolution,
 } from "./account-turn-values.js";
 
 describe("account turn value boundaries", () => {
@@ -87,5 +88,61 @@ describe("account turn value boundaries", () => {
     expect(() =>
       parseAccountTurnPlan({ schema: "account-turn-plan-v1", slots: [] }),
     ).toThrow();
+  });
+});
+
+describe("versioned account routing resolution", () => {
+  const schema = "account-routing-resolution-v1";
+  const foodDayId = "20000000-0000-4000-8000-000000000001";
+  const entryId = "30000000-0000-4000-8000-000000000001";
+
+  it("round-trips every trusted variant without model-safe tokens", () => {
+    for (const value of [
+      { schema, kind: "EXISTING_DAY", foodDayId },
+      {
+        schema,
+        kind: "EXISTING_ENTRY_REFERENCE",
+        foodDayId,
+        entryId,
+        revision: 3,
+      },
+      { schema, kind: "DATE_TARGET", localDate: "2026-10-10" },
+      { schema, kind: "DAYLESS" },
+      { schema, kind: "CLARIFY", question: "Which day did you mean?" },
+    ]) {
+      expect(
+        parseAccountTurnRoutingResolution(JSON.parse(JSON.stringify(value))),
+      ).toEqual(value);
+    }
+  });
+
+  it("rejects unsupported versions, malformed IDs/revisions/dates, blank questions, and extra fields", () => {
+    for (const value of [
+      { schema: "account-routing-resolution-v2", kind: "DAYLESS" },
+      { schema, kind: "EXISTING_DAY", foodDayId: "day_snapshot_1" },
+      {
+        schema,
+        kind: "EXISTING_ENTRY_REFERENCE",
+        foodDayId,
+        entryId,
+        revision: 0,
+      },
+      {
+        schema,
+        kind: "EXISTING_ENTRY_REFERENCE",
+        foodDayId,
+        entryId,
+        revision: 1.5,
+      },
+      { schema, kind: "DATE_TARGET", localDate: "2026-02-30" },
+      { schema, kind: "CLARIFY", question: "  " },
+      { schema, kind: "CLARIFY", question: `Choose ${foodDayId}?` },
+      { schema, kind: "DAYLESS", foodDayId },
+      { schema, kind: "EXISTING_DAY", foodDayId, entryId },
+    ]) {
+      expect(() => parseAccountTurnRoutingResolution(value)).toThrow(
+        "Invalid account turn routing resolution.",
+      );
+    }
   });
 });

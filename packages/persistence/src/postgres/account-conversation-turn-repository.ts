@@ -3,10 +3,12 @@ import { isDeepStrictEqual } from "node:util";
 import {
   parseAccountTurnCalendarSnapshot,
   parseAccountTurnPlan,
+  parseAccountTurnRoutingResolution,
 } from "../account-turn-values.js";
 import type {
   AccountTurnCalendarSnapshot,
   AccountTurnPlan,
+  AccountTurnRoutingResolution,
   PersistedAccountTurn,
 } from "../types.js";
 import type { PostgresExecutor } from "./food-entry-repository.js";
@@ -82,6 +84,8 @@ export class PostgresAccountConversationTurnRepository {
       throw new TypeError("Account turn message must not be blank.");
     }
     const context = parseAccountTurnCalendarSnapshot(input.calendarContext);
+    const found = await this.findByKey(input.userId, input.turnKey);
+    if (found !== null) return this.matchClaim(found, input, context);
     await new PostgresConversationRepository(this.executor).getOrCreate(
       input.userId,
     );
@@ -104,13 +108,7 @@ export class PostgresAccountConversationTurnRepository {
     if (row !== undefined)
       return { disposition: "CREATED", turn: parseTurn(row) };
     const existing = await this.requireMatching(input);
-    if (
-      existing.userMessage !== input.userMessage ||
-      !isDeepStrictEqual(existing.calendarContext, context)
-    ) {
-      throw new AccountTurnIdempotencyConflictError();
-    }
-    return { disposition: "EXISTING", turn: existing };
+    return this.matchClaim(existing, input, context);
   }
 
   async findByKey(
@@ -144,13 +142,47 @@ export class PostgresAccountConversationTurnRepository {
        set resolved_food_day_id = $4
        where user_id = $1 and turn_key = $2 and request_fingerprint = $3
          and status = 'PENDING' and resolved_food_day_id is null
-         and execution_plan is null
+         and routing_resolution is null and execution_plan is null
        returning ${columns}`,
       [input.userId, input.turnKey, input.requestFingerprint, foodDayId],
     );
     if (updated.rows[0] !== undefined) return parseTurn(updated.rows[0]);
     const existing = await this.requireMatching(input);
     if (existing.resolvedFoodDayId === foodDayId) return existing;
+    throw new AccountTurnStateConflictError();
+  }
+
+  /** A single row CAS persists the trusted resolution and its owned parent day.
+   * Concurrent losers read the first durable winner without overwriting it. */
+  async setRoutingResolutionOnce(
+    input: AccountTurnKeyInput & {
+      readonly resolution: AccountTurnRoutingResolution;
+    },
+  ): Promise<PersistedAccountTurn> {
+    const resolution = parseAccountTurnRoutingResolution(input.resolution);
+    const foodDayId =
+      resolution.kind === "EXISTING_DAY" ||
+      resolution.kind === "EXISTING_ENTRY_REFERENCE"
+        ? resolution.foodDayId
+        : null;
+    const updated = await this.executor.query(
+      `update public.conversation_turns
+       set routing_resolution = $4::jsonb, resolved_food_day_id = $5::uuid
+       where user_id = $1 and turn_key = $2 and request_fingerprint = $3
+         and status = 'PENDING' and routing_resolution is null
+         and resolved_food_day_id is null and execution_plan is null
+       returning ${columns}`,
+      [
+        input.userId,
+        input.turnKey,
+        input.requestFingerprint,
+        JSON.stringify(resolution),
+        foodDayId,
+      ],
+    );
+    if (updated.rows[0] !== undefined) return parseTurn(updated.rows[0]);
+    const existing = await this.requireMatching(input);
+    if (existing.routingResolution !== null) return existing;
     throw new AccountTurnStateConflictError();
   }
 
@@ -281,10 +313,26 @@ export class PostgresAccountConversationTurnRepository {
     }
     return existing;
   }
+
+  private matchClaim(
+    existing: PersistedAccountTurn,
+    input: ClaimAccountTurnInput,
+    context: AccountTurnCalendarSnapshot,
+  ): AccountTurnClaim {
+    if (
+      existing.requestFingerprint !== input.requestFingerprint ||
+      existing.userMessage !== input.userMessage ||
+      !isDeepStrictEqual(existing.calendarContext, context)
+    ) {
+      throw new AccountTurnIdempotencyConflictError();
+    }
+    return { disposition: "EXISTING", turn: existing };
+  }
 }
 
 const columns = `id, user_id, turn_key, request_fingerprint, user_message,
-  calendar_context, status, resolved_food_day_id, execution_plan, response,
+  calendar_context, status, resolved_food_day_id, routing_resolution,
+  execution_plan, response,
   to_jsonb(created_at) #>> '{}' as created_at,
   to_jsonb(completed_at) #>> '{}' as completed_at`;
 
@@ -299,6 +347,7 @@ function parseTurn(value: unknown): PersistedAccountTurn {
     (value.status !== "PENDING" && value.status !== "COMPLETED") ||
     (value.resolved_food_day_id !== null &&
       typeof value.resolved_food_day_id !== "string") ||
+    value.routing_resolution === undefined ||
     (value.response !== null && typeof value.response !== "string") ||
     typeof value.created_at !== "string" ||
     (value.completed_at !== null && typeof value.completed_at !== "string")
@@ -312,6 +361,19 @@ function parseTurn(value: unknown): PersistedAccountTurn {
     value.execution_plan === null
       ? null
       : parseAccountTurnPlan(value.execution_plan);
+  const routingResolution =
+    value.routing_resolution === null
+      ? null
+      : parseAccountTurnRoutingResolution(value.routing_resolution);
+  if (
+    routingResolution !== null &&
+    (routingResolution.kind === "EXISTING_DAY" ||
+    routingResolution.kind === "EXISTING_ENTRY_REFERENCE"
+      ? value.resolved_food_day_id !== routingResolution.foodDayId
+      : value.resolved_food_day_id !== null)
+  ) {
+    throw new TypeError("PostgreSQL returned an inconsistent routing target.");
+  }
   if (
     value.status === "PENDING" &&
     (value.response !== null || value.completed_at !== null)
@@ -335,6 +397,7 @@ function parseTurn(value: unknown): PersistedAccountTurn {
     calendarContext,
     status: value.status,
     resolvedFoodDayId: value.resolved_food_day_id,
+    routingResolution,
     executionPlan,
     response: value.response,
     createdAt: value.created_at,
