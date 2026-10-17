@@ -522,3 +522,9 @@ command. Changes to derivation/canonicalization semantics require a version bump
 The POST application mutation above uses this boundary after decimal command
 normalization. Existing exactly-once persistence workflows and schema remain
 unchanged; `requestFingerprint` matches their input.
+
+The transport-independent account nutrition target query returns `NOT_CONFIGURED`
+or a complete canonical target configuration; it never inherits a FoodDay or
+supplies zero defaults. The explicit set mutation normalizes both exact target
+strings before deriving retry identity, and uses versioned, exactly-once
+persistence. It is not exposed through HTTP or account conversation routing yet.

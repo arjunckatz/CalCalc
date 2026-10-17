@@ -104,6 +104,16 @@ export interface PersistedConversation {
   readonly updatedAt: string;
 }
 
+/** Mutable account defaults; FoodDays retain their own immutable target snapshots. */
+export interface AccountNutritionTargets {
+  readonly userId: string;
+  readonly calorieTarget: FoodDay["calorieTarget"];
+  readonly proteinTarget: FoodDay["proteinTarget"];
+  readonly version: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export type AccountTurnStatus = "PENDING" | "COMPLETED";
 
 /** Versioned, accepted client context; not a verified physical clock. */

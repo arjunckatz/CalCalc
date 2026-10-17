@@ -147,6 +147,18 @@ export {
   type LogBodyWeightMutationResult,
 } from "./mutations/log-body-weight.js";
 export {
+  getAccountNutritionTargets,
+  type GetAccountNutritionTargetsResult,
+} from "./queries/get-account-nutrition-targets.js";
+export {
+  setAccountNutritionTargetsMutation,
+  parseSetAccountNutritionTargetsCommand,
+  InvalidSetAccountNutritionTargetsCommandError,
+  type SetAccountNutritionTargetsCommand,
+  type SetAccountNutritionTargetsMutationInput,
+  type SetAccountNutritionTargetsMutationResult,
+} from "./mutations/set-account-nutrition-targets.js";
+export {
   updateFoodEntryMutation,
   type UpdateFoodEntryCommand,
   type UpdateFoodEntryMutationInput,

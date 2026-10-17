@@ -1,4 +1,15 @@
 export {
+  AccountNutritionTargetsVersionConflictError,
+  PostgresAccountNutritionTargetsRepository,
+  type SetAccountNutritionTargetsRecord,
+} from "./postgres/account-nutrition-targets-repository.js";
+export {
+  setAccountNutritionTargetsExactlyOnce,
+  SetAccountNutritionTargetsIntegrityError,
+  type SetAccountNutritionTargetsExactlyOnceInput,
+  type SetAccountNutritionTargetsExactlyOnceResult,
+} from "./postgres/set-account-nutrition-targets-exactly-once.js";
+export {
   AccountTurnIdempotencyConflictError,
   AccountTurnNotFoundError,
   AccountTurnStateConflictError,
@@ -119,6 +130,7 @@ export {
 } from "./resolve-food-day-target.js";
 export { foodDayCompletenessValues } from "./types.js";
 export type {
+  AccountNutritionTargets,
   AcceptedAccountTurnCalendarSnapshot,
   AccountTurnCalendarSnapshot,
   AccountTurnPlan,

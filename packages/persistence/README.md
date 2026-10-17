@@ -147,3 +147,14 @@ Food-entry revisions reject ordinary updates and authenticated users receive no
 revision-history delete policy. A universal delete-rejection trigger is
 intentionally omitted so a future explicitly privileged privacy-purge workflow
 can truly remove a user's records. That workflow is outside M2A.
+
+Account nutrition targets are a separate, server-owned one-row-per-user
+configuration. Both exact calorie and protein defaults are set atomically, or
+the account is explicitly not configured. Initial writes require absence;
+updates use a version compare-and-set, and application retries use the existing
+semantic-operation identity and durable result replay. The database owns
+timestamps, and browser roles have no direct table access. These defaults are
+for future FoodDays: existing FoodDays retain their own historical target
+snapshots when defaults change. No automatic FoodDay creation or target history
+is implemented here; audit history may be added separately if needed. The
+PostgreSQL proof is opt-in through `test:integration:account-targets`.
