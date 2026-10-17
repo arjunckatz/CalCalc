@@ -38,6 +38,20 @@ class ScriptedExecutor implements PostgresExecutor {
 }
 
 describe("PostgresFoodDayRepository", () => {
+  it("bounds exact owner/date materialization revalidation to two rows", async () => {
+    const executor = new ScriptedExecutor([
+      [foodDayRow(testFoodDay(firstDayId))],
+    ]);
+    const found = await new PostgresFoodDayRepository(
+      executor,
+    ).findUpToTwoByLocalDate(userId, localDate);
+    expect(found).toHaveLength(1);
+    expect(normalizeSql(executor.calls[0]?.queryText)).toContain(
+      "where user_id = $1 and local_date = $2::date order by opened_at asc, id asc limit 2 for share",
+    );
+    expect(executor.calls[0]?.values).toEqual([userId, localDate]);
+  });
+
   it("creates through explicit columns and preserves exact target strings", async () => {
     const foodDay = testFoodDay(firstDayId);
     const executor = new ScriptedExecutor([

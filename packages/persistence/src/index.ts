@@ -4,6 +4,12 @@ export {
   type SetAccountNutritionTargetsRecord,
 } from "./postgres/account-nutrition-targets-repository.js";
 export {
+  materializeAccountTurnFoodDay,
+  AccountTurnMaterializationIneligibleError,
+  AccountTurnMaterializationIntegrityError,
+  type MaterializeAccountTurnFoodDayResult,
+} from "./postgres/materialize-account-turn-food-day.js";
+export {
   setAccountNutritionTargetsExactlyOnce,
   SetAccountNutritionTargetsIntegrityError,
   type SetAccountNutritionTargetsExactlyOnceInput,

@@ -109,6 +109,22 @@ export class PostgresFoodDayRepository {
     return result.rows.map((row) => fromFoodDayRow(parseFoodDayRow(row)));
   }
 
+  /** Exact-date cardinality proof for automatic account-turn materialization. */
+  async findUpToTwoByLocalDate(
+    userId: string,
+    localDate: string,
+  ): Promise<readonly PersistedFoodDay[]> {
+    const result = await this.executor.query(
+      `select ${foodDayResultColumns}
+       from public.food_days
+       where user_id = $1 and local_date = $2::date
+       order by opened_at asc, id asc
+       limit 2 for share`,
+      [userId, localDate],
+    );
+    return result.rows.map((row) => fromFoodDayRow(parseFoodDayRow(row)));
+  }
+
   /** All owned same-date candidates up to a fixed bound; never implies uniqueness if hasMore. */
   async listRoutingCandidatesByLocalDate(
     userId: string,

@@ -158,3 +158,16 @@ for future FoodDays: existing FoodDays retain their own historical target
 snapshots when defaults change. No automatic FoodDay creation or target history
 is implemented here; audit history may be added separately if needed. The
 PostgreSQL proof is opt-in through `test:integration:account-targets`.
+
+The account-turn DATE_TARGET materialization primitive is separate from the
+semantic routing resolution. It locks the existing conversation then turn,
+rechecks at most two owned days for the persisted date, reuses a sole day or
+snapshots configured account targets into one new canonical day, and atomically
+records a reserved semantic operation plus a set-once turn-to-day link. Missing
+targets and multiple existing days remain retryable without a claim or write.
+The acquired day survives same-turn retries and account-default changes, but
+the turn stays pending: this primitive does not update the active pointer,
+execute tools, persist a plan, or complete the turn. Multiple FoodDays on a
+date remain legal; only automatic materializations for the same account are
+serialized. Real PostgreSQL proof is opt-in through
+`test:integration:account-materialization`.

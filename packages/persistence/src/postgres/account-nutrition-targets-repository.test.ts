@@ -27,6 +27,15 @@ class Executor implements PostgresExecutor {
 }
 
 describe("PostgresAccountNutritionTargetsRepository", () => {
+  it("can lock an exact owner target snapshot until the enclosing transaction ends", async () => {
+    const executor = new Executor([[row]]);
+    await new PostgresAccountNutritionTargetsRepository(
+      executor,
+    ).findByUserForShare(userId);
+    expect(executor.calls[0]?.sql).toContain("where user_id = $1 for share");
+    expect(executor.calls[0]?.values).toEqual([userId]);
+  });
+
   it("represents absence explicitly with an owner-scoped read", async () => {
     const executor = new Executor([[]]);
     expect(

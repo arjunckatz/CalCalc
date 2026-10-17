@@ -25,9 +25,23 @@ export class PostgresAccountNutritionTargetsRepository {
   constructor(private readonly executor: PostgresExecutor) {}
 
   async findByUser(userId: string): Promise<AccountNutritionTargets | null> {
+    return this.loadByUser(userId, false);
+  }
+
+  /** Keep an automatic FoodDay's default snapshot stable through transaction commit. */
+  async findByUserForShare(
+    userId: string,
+  ): Promise<AccountNutritionTargets | null> {
+    return this.loadByUser(userId, true);
+  }
+
+  private async loadByUser(
+    userId: string,
+    forShare: boolean,
+  ): Promise<AccountNutritionTargets | null> {
     const result = await this.executor.query(
       `select ${columns} from public.account_nutrition_targets
-       where user_id = $1`,
+       where user_id = $1${forShare ? " for share" : ""}`,
       [userId],
     );
     const row = result.rows[0];
