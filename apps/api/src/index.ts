@@ -49,6 +49,13 @@ export {
   type RunAccountConversationTurnRequest,
 } from "./conversation/run-account-conversation-turn.js";
 export {
+  prepareAccountTurnFoodDayExecution,
+  AccountTurnExecutionTargetIntegrityError,
+  AccountTurnExecutionTargetIneligibleError,
+  type PrepareAccountTurnFoodDayExecutionDependencies,
+  type PrepareAccountTurnFoodDayExecutionResult,
+} from "./conversation/prepare-account-turn-food-day-execution.js";
+export {
   createOpenAIFoodDayTargetModel,
   OpenAIFoodDayTargetModelError,
   type OpenAIFoodDayTargetModelConfig,

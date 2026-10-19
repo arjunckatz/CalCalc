@@ -171,3 +171,9 @@ execute tools, persist a plan, or complete the turn. Multiple FoodDays on a
 date remain legal; only automatic materializations for the same account are
 serialized. Real PostgreSQL proof is opt-in through
 `test:integration:account-materialization`.
+
+The owner-scoped `findExecutionCheckpoint(userId, turnId)` read exposes the
+pending/completed status, trusted routing resolution, and both durable target
+columns for pre-execution validation. It does not claim an operation, acquire
+a day, or write a turn. The existing account-materialization PostgreSQL suite
+also verifies this read against the materialized link and cross-owner scope.

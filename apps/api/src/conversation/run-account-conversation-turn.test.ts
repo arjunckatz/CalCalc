@@ -317,7 +317,13 @@ describe("durable account-turn routing coordinator", () => {
         await runAccountConversationTurn(test.dependencies, original),
       ).toEqual(
         resolution.kind === "DATE_TARGET"
-          ? { kind: "FOOD_DAY_READY", foodDayId, source: "CREATED", resolution }
+          ? {
+              kind: "FOOD_DAY_READY",
+              turnId: test.turns.turn?.id,
+              foodDayId,
+              source: "CREATED",
+              resolution,
+            }
           : { kind: "CLARIFICATION_READY", question: resolution.question },
       );
       expect(test.findByUser).not.toHaveBeenCalled();
@@ -350,6 +356,7 @@ describe("durable account-turn routing coordinator", () => {
       await runAccountConversationTurn(test.dependencies, request()),
     ).toEqual({
       kind: "FOOD_DAY_READY",
+      turnId: test.turns.turn?.id,
       foodDayId,
       source: "CREATED",
       resolution: { schema, kind: "DATE_TARGET", localDate: "2026-10-14" },
@@ -587,7 +594,11 @@ describe("durable account-turn routing coordinator", () => {
       test.materializeFoodDay.mockClear();
       expect(
         await runAccountConversationTurn(test.dependencies, original),
-      ).toEqual(expected);
+      ).toEqual(
+        expected.kind === "FOOD_DAY_READY"
+          ? { ...expected, turnId: test.turns.turn?.id }
+          : expected,
+      );
       expect(test.decide).not.toHaveBeenCalled();
       expect(test.listRoutingCandidatesByLocalDate).not.toHaveBeenCalled();
       expect(test.turns.setRoutingResolutionOnce).not.toHaveBeenCalled();
@@ -687,6 +698,7 @@ describe("durable account-turn routing coordinator", () => {
         await runAccountConversationTurn(test.dependencies, request(message)),
       ).toEqual({
         kind: "FOOD_DAY_READY",
+        turnId: test.turns.turn?.id,
         foodDayId,
         source: "CREATED",
         resolution: { schema, kind: "DATE_TARGET", localDate },
@@ -718,6 +730,7 @@ describe("durable account-turn routing coordinator", () => {
     );
     expect(result).toEqual({
       kind: "FOOD_DAY_READY",
+      turnId: test.turns.turn?.id,
       foodDayId,
       source: "RESOLVED_EXISTING",
       resolution: { schema, kind: "EXISTING_DAY", foodDayId },
@@ -744,6 +757,7 @@ describe("durable account-turn routing coordinator", () => {
       ),
     ).toEqual({
       kind: "FOOD_DAY_READY",
+      turnId: test.turns.turn?.id,
       foodDayId,
       source: "CREATED",
       resolution: { schema, kind: "DATE_TARGET", localDate: "2026-10-10" },
@@ -811,6 +825,7 @@ describe("durable account-turn routing coordinator", () => {
       ),
     ).toEqual({
       kind: "FOOD_DAY_READY",
+      turnId: test.turns.turn?.id,
       foodDayId,
       source: "RESOLVED_EXISTING",
       resolution: {

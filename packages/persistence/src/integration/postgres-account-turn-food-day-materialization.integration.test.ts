@@ -240,6 +240,19 @@ describe("PostgreSQL replay-safe account-turn FoodDay materialization", () => {
       },
       execution_plan: null,
     });
+    expect(await turns.findExecutionCheckpoint(userA, turn.turnId)).toEqual({
+      turnId: turn.turnId,
+      userId: userA,
+      status: "PENDING",
+      routingResolution: {
+        schema: "account-routing-resolution-v1",
+        kind: "DATE_TARGET",
+        localDate: dateA,
+      },
+      resolvedFoodDayId: null,
+      materializedFoodDayId: first.foodDayId,
+    });
+    expect(await turns.findExecutionCheckpoint(userB, turn.turnId)).toBeNull();
     const conversation = await pool.query<{
       version: number;
       active_food_day_id: string | null;

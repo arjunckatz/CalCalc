@@ -23,6 +23,7 @@ export {
   RECENT_ACCOUNT_TURN_LIMIT,
   MAX_RECENT_RESOLVED_TURNS,
   type AccountTranscriptItem,
+  type AccountTurnExecutionCheckpoint,
   type ResolvedTurnReference,
   type AccountTurnClaim,
   type AccountTurnCompletion,

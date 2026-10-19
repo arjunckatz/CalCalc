@@ -50,6 +50,7 @@ export type AccountConversationTurnResult =
   | { readonly kind: "COMPLETED_REPLAY"; readonly response: string }
   | {
       readonly kind: "FOOD_DAY_READY";
+      readonly turnId: string;
       readonly foodDayId: string;
       readonly source: "CREATED" | "EXISTING";
       readonly resolution: Extract<
@@ -59,6 +60,7 @@ export type AccountConversationTurnResult =
     }
   | {
       readonly kind: "FOOD_DAY_READY";
+      readonly turnId: string;
       readonly foodDayId: string;
       readonly source: "RESOLVED_EXISTING";
       readonly resolution: Extract<
@@ -167,6 +169,7 @@ async function resolveExecutionTarget(
         case "FOOD_DAY_READY":
           return {
             kind: "FOOD_DAY_READY",
+            turnId,
             foodDayId: materialized.foodDayId,
             source: materialized.source,
             resolution,
@@ -185,6 +188,7 @@ async function resolveExecutionTarget(
     case "EXISTING_ENTRY_REFERENCE":
       return {
         kind: "FOOD_DAY_READY",
+        turnId,
         foodDayId: resolution.foodDayId,
         source: "RESOLVED_EXISTING",
         resolution,

@@ -501,6 +501,16 @@ retry after either durable checkpoint resumes without resampling the model.
 This remains an internal pre-execution boundary: no STATE, tools, execution
 plan, active pointer, or new completed response is written here.
 
+M5A8A adds a separate read-only preparation step for `FOOD_DAY_READY`. It
+rechecks the owned pending turn and its exact durable FoodDay target, then uses
+the existing canonical FoodDay STATE loader and deterministic accounting. An
+entry-reference resolution also requires the original parent, undeleted entry,
+and snapshot revision to remain valid; deletion or revision change returns an
+internal stale-reference outcome instead of silently retargeting. The prepared
+STATE is a current read, not a lock held across later model work: future writes
+must still use domain preconditions and optimistic revision checks. No account
+transcript, tool, model, plan, pointer update, or public response is involved.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`

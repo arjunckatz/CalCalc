@@ -24,6 +24,16 @@ export interface ResolvedTurnReference {
   readonly createdAt: string;
 }
 
+/** Owner-scoped execution checkpoint, including the set-once materialized link. */
+export interface AccountTurnExecutionCheckpoint {
+  readonly turnId: string;
+  readonly userId: string;
+  readonly status: "PENDING" | "COMPLETED";
+  readonly routingResolution: AccountTurnRoutingResolution | null;
+  readonly resolvedFoodDayId: string | null;
+  readonly materializedFoodDayId: string | null;
+}
+
 export interface ClaimAccountTurnInput {
   readonly id: string;
   readonly userId: string;
@@ -122,6 +132,21 @@ export class PostgresAccountConversationTurnRepository {
     );
     const row = result.rows[0];
     return row === undefined ? null : parseTurn(row);
+  }
+
+  async findExecutionCheckpoint(
+    userId: string,
+    turnId: string,
+  ): Promise<AccountTurnExecutionCheckpoint | null> {
+    const result = await this.executor.query(
+      `select id, user_id, status, routing_resolution,
+              resolved_food_day_id, materialized_food_day_id
+       from public.conversation_turns
+       where user_id = $1 and id = $2`,
+      [userId, turnId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : parseExecutionCheckpoint(row);
   }
 
   async setResolvedTarget(
@@ -407,4 +432,57 @@ function parseTurn(value: unknown): PersistedAccountTurn {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseExecutionCheckpoint(
+  value: unknown,
+): AccountTurnExecutionCheckpoint {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    !uuidPattern.test(value.id) ||
+    typeof value.user_id !== "string" ||
+    !uuidPattern.test(value.user_id) ||
+    (value.status !== "PENDING" && value.status !== "COMPLETED") ||
+    (value.resolved_food_day_id !== null &&
+      (typeof value.resolved_food_day_id !== "string" ||
+        !uuidPattern.test(value.resolved_food_day_id))) ||
+    (value.materialized_food_day_id !== null &&
+      (typeof value.materialized_food_day_id !== "string" ||
+        !uuidPattern.test(value.materialized_food_day_id)))
+  ) {
+    throw new TypeError(
+      "PostgreSQL returned an invalid account turn execution checkpoint.",
+    );
+  }
+  const resolution =
+    value.routing_resolution === null
+      ? null
+      : parseAccountTurnRoutingResolution(value.routing_resolution);
+  if (
+    resolution === null ||
+    (resolution.kind === "DATE_TARGET"
+      ? value.resolved_food_day_id !== null
+      : resolution.kind === "EXISTING_DAY" ||
+          resolution.kind === "EXISTING_ENTRY_REFERENCE"
+        ? value.resolved_food_day_id !== resolution.foodDayId ||
+          value.materialized_food_day_id !== null
+        : value.resolved_food_day_id !== null ||
+          value.materialized_food_day_id !== null)
+  ) {
+    throw new TypeError(
+      "PostgreSQL returned an inconsistent account turn execution checkpoint.",
+    );
+  }
+  return {
+    turnId: value.id,
+    userId: value.user_id,
+    status: value.status,
+    routingResolution: resolution,
+    resolvedFoodDayId: value.resolved_food_day_id as string | null,
+    materializedFoodDayId: value.materialized_food_day_id as string | null,
+  };
 }

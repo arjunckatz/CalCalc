@@ -56,6 +56,69 @@ function key() {
 }
 
 describe("PostgresAccountConversationTurnRepository", () => {
+  it("reads a strict owner-scoped materialized date checkpoint without writing", async () => {
+    const foodDayId = "20000000-0000-4000-8000-000000000001";
+    const executor = new ScriptedExecutor([
+      [
+        row({
+          routing_resolution: {
+            schema: "account-routing-resolution-v1",
+            kind: "DATE_TARGET",
+            localDate: "2026-10-18",
+          },
+          materialized_food_day_id: foodDayId,
+        }),
+      ],
+    ]);
+    expect(
+      await new PostgresAccountConversationTurnRepository(
+        executor,
+      ).findExecutionCheckpoint(userId, id),
+    ).toEqual({
+      turnId: id,
+      userId,
+      status: "PENDING",
+      routingResolution: {
+        schema: "account-routing-resolution-v1",
+        kind: "DATE_TARGET",
+        localDate: "2026-10-18",
+      },
+      resolvedFoodDayId: null,
+      materializedFoodDayId: foodDayId,
+    });
+    expect(executor.calls).toHaveLength(1);
+    expect(executor.calls[0]?.sql.replaceAll(/\s+/g, " ")).toContain(
+      "from public.conversation_turns where user_id = $1 and id = $2",
+    );
+    expect(executor.calls[0]?.values).toEqual([userId, id]);
+    expect(executor.calls[0]?.sql).toContain("materialized_food_day_id");
+  });
+
+  it("rejects inconsistent execution checkpoint columns and returns null for an absent owner", async () => {
+    const invalid = new ScriptedExecutor([
+      [
+        row({
+          routing_resolution: {
+            schema: "account-routing-resolution-v1",
+            kind: "EXISTING_DAY",
+            foodDayId: "20000000-0000-4000-8000-000000000001",
+          },
+          materialized_food_day_id: "20000000-0000-4000-8000-000000000002",
+        }),
+      ],
+    ]);
+    await expect(
+      new PostgresAccountConversationTurnRepository(
+        invalid,
+      ).findExecutionCheckpoint(userId, id),
+    ).rejects.toThrow("inconsistent account turn execution checkpoint");
+    expect(
+      await new PostgresAccountConversationTurnRepository(
+        new ScriptedExecutor([[]]),
+      ).findExecutionCheckpoint(userId, id),
+    ).toBeNull();
+  });
+
   it("reads only bounded completed resolved target metadata in deterministic order", async () => {
     const rows = Array.from({ length: 9 }, (_, index) => ({
       id: `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
