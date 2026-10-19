@@ -1,10 +1,13 @@
 import { createFoodDay, createFoodEntry } from "@cal-calc/domain";
 import {
+  AccountTurnMaterializationIntegrityError,
+  AccountTurnMaterializationIneligibleError,
   AccountTurnIdempotencyConflictError,
   type AccountTurnClaim,
   type AccountTurnRoutingResolution,
   type BoundedRows,
   type ClaimAccountTurnInput,
+  type MaterializeAccountTurnFoodDayResult,
   type PersistedAccountTurn,
   type PersistedFoodDay,
   type PersistedFoodEntry,
@@ -88,6 +91,7 @@ function entry(parent: PersistedFoodDay): PersistedFoodEntry {
 class MemoryTurns {
   turn: PersistedAccountTurn | null = null;
   raceWinner: AccountTurnRoutingResolution | null = null;
+  raceCompletedResponse: string | null = null;
 
   claimPending = vi.fn(
     async (input: ClaimAccountTurnInput): Promise<AccountTurnClaim> => {
@@ -136,6 +140,15 @@ class MemoryTurns {
         this.turn.requestFingerprint !== input.requestFingerprint
       )
         throw new Error("Test repository identity mismatch.");
+      if (this.raceCompletedResponse !== null) {
+        this.turn = {
+          ...this.turn,
+          status: "COMPLETED",
+          response: this.raceCompletedResponse,
+          completedAt: "2026-10-14T00:00:01Z",
+        };
+        return this.turn;
+      }
       if (this.turn.routingResolution !== null) return this.turn;
       const winner = this.raceWinner ?? input.resolution;
       this.turn = {
@@ -163,6 +176,7 @@ function harness(
         AccountConversationTurnDependencies["model"]["decide"]
       >[0],
     ) => unknown;
+    materialization?: MaterializeAccountTurnFoodDayResult;
   } = {},
 ) {
   const turns = new MemoryTurns();
@@ -186,6 +200,21 @@ function harness(
       >[0],
     ) => options.modelDecision?.(input) ?? { kind: "DAYLESS" },
   );
+  const materializeFoodDay = vi.fn(
+    async (input: {
+      trustedUserId: string;
+      turnId: string;
+    }): Promise<MaterializeAccountTurnFoodDayResult> => {
+      expect(input.trustedUserId).toBe(userId);
+      return (
+        options.materialization ?? {
+          kind: "FOOD_DAY_READY",
+          foodDayId,
+          source: "CREATED",
+        }
+      );
+    },
+  );
   const dependencies: AccountConversationTurnDependencies = {
     turns,
     routing: {
@@ -199,6 +228,7 @@ function harness(
       entries: { listRecentRoutingReferences },
     },
     model: { decide },
+    materializeFoodDay,
   };
   return {
     dependencies,
@@ -208,6 +238,7 @@ function harness(
     listRecentResolvedTargets,
     listRecentRoutingReferences,
     decide,
+    materializeFoodDay,
   };
 }
 
@@ -219,12 +250,12 @@ describe("durable account-turn routing coordinator", () => {
       request("Hey."),
     );
     expect(result).toEqual({
-      kind: "RESOLUTION_READY",
-      resolution: { schema, kind: "DAYLESS" },
+      kind: "DAYLESS_READY",
     });
     expect(test.turns.claimPending).toHaveBeenCalledTimes(1);
     expect(test.decide).toHaveBeenCalledTimes(1);
     expect(test.turns.setRoutingResolutionOnce).toHaveBeenCalledTimes(1);
+    expect(test.materializeFoodDay).not.toHaveBeenCalled();
     expect(test.turns.turn).toMatchObject({
       status: "PENDING",
       resolvedFoodDayId: null,
@@ -252,6 +283,7 @@ describe("durable account-turn routing coordinator", () => {
     test.listRecentRoutingReferences.mockClear();
     test.decide.mockClear();
     test.turns.setRoutingResolutionOnce.mockClear();
+    test.materializeFoodDay.mockClear();
     expect(
       await runAccountConversationTurn(test.dependencies, original),
     ).toEqual({
@@ -264,6 +296,7 @@ describe("durable account-turn routing coordinator", () => {
     expect(test.listRecentRoutingReferences).not.toHaveBeenCalled();
     expect(test.decide).not.toHaveBeenCalled();
     expect(test.turns.setRoutingResolutionOnce).not.toHaveBeenCalled();
+    expect(test.materializeFoodDay).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -282,14 +315,288 @@ describe("durable account-turn routing coordinator", () => {
       test.turns.setRoutingResolutionOnce.mockClear();
       expect(
         await runAccountConversationTurn(test.dependencies, original),
-      ).toEqual({
-        kind: "RESOLUTION_READY",
-        resolution,
-      });
+      ).toEqual(
+        resolution.kind === "DATE_TARGET"
+          ? { kind: "FOOD_DAY_READY", foodDayId, source: "CREATED", resolution }
+          : { kind: "CLARIFICATION_READY", question: resolution.question },
+      );
       expect(test.findByUser).not.toHaveBeenCalled();
       expect(test.listRoutingCandidatesByLocalDate).not.toHaveBeenCalled();
       expect(test.decide).not.toHaveBeenCalled();
       expect(test.turns.setRoutingResolutionOnce).not.toHaveBeenCalled();
+      expect(test.materializeFoodDay).toHaveBeenCalledTimes(
+        resolution.kind === "DATE_TARGET" ? 1 : 0,
+      );
+    },
+  );
+
+  it("materializes a freshly persisted DATE_TARGET in the same invocation, after routing persistence", async () => {
+    const test = harness({
+      modelDecision: () => ({ kind: "DATE_TARGET", localDate: "2026-10-14" }),
+    });
+    test.materializeFoodDay.mockImplementationOnce(async (input) => {
+      expect(input).toEqual({
+        trustedUserId: userId,
+        turnId: test.turns.turn?.id,
+      });
+      expect(test.turns.turn?.routingResolution).toEqual({
+        schema,
+        kind: "DATE_TARGET",
+        localDate: "2026-10-14",
+      });
+      return { kind: "FOOD_DAY_READY", foodDayId, source: "CREATED" };
+    });
+    expect(
+      await runAccountConversationTurn(test.dependencies, request()),
+    ).toEqual({
+      kind: "FOOD_DAY_READY",
+      foodDayId,
+      source: "CREATED",
+      resolution: { schema, kind: "DATE_TARGET", localDate: "2026-10-14" },
+    });
+    expect(test.decide).toHaveBeenCalledTimes(1);
+    expect(test.turns.setRoutingResolutionOnce).toHaveBeenCalledTimes(1);
+    expect(test.materializeFoodDay).toHaveBeenCalledTimes(1);
+    expect(test.decide.mock.invocationCallOrder[0]).toBeLessThan(
+      test.turns.setRoutingResolutionOnce.mock.invocationCallOrder[0]!,
+    );
+    expect(
+      test.turns.setRoutingResolutionOnce.mock.invocationCallOrder[0],
+    ).toBeLessThan(test.materializeFoodDay.mock.invocationCallOrder[0]!);
+    expect(test.turns.turn).toMatchObject({
+      status: "PENDING",
+      resolvedFoodDayId: null,
+      executionPlan: null,
+      response: null,
+    });
+  });
+
+  it("recovers a persisted date resolution after a failure before the materializer call", async () => {
+    const test = harness({
+      modelDecision: () => ({ kind: "DATE_TARGET", localDate: "2026-10-14" }),
+    });
+    const original = request();
+    const persist =
+      test.turns.setRoutingResolutionOnce.getMockImplementation()!;
+    test.turns.setRoutingResolutionOnce.mockImplementationOnce(
+      async (input) => {
+        await persist(input);
+        throw new Error("process lost after resolution commit");
+      },
+    );
+    await expect(
+      runAccountConversationTurn(test.dependencies, original),
+    ).rejects.toThrow("process lost after resolution commit");
+    expect(test.materializeFoodDay).not.toHaveBeenCalled();
+    expect(test.turns.turn?.routingResolution).toEqual({
+      schema,
+      kind: "DATE_TARGET",
+      localDate: "2026-10-14",
+    });
+    expect(
+      await runAccountConversationTurn(test.dependencies, original),
+    ).toMatchObject({
+      kind: "FOOD_DAY_READY",
+      foodDayId,
+    });
+    expect(test.decide).toHaveBeenCalledTimes(1);
+    expect(test.turns.setRoutingResolutionOnce).toHaveBeenCalledTimes(1);
+    expect(test.materializeFoodDay).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a committed materialization replay from the dependency after a lost coordinator response", async () => {
+    const test = harness({
+      modelDecision: () => ({ kind: "DATE_TARGET", localDate: "2026-10-14" }),
+    });
+    const original = request();
+    let committed: MaterializeAccountTurnFoodDayResult | null = null;
+    test.materializeFoodDay.mockImplementation(async () => {
+      committed ??= { kind: "FOOD_DAY_READY", foodDayId, source: "CREATED" };
+      return committed;
+    });
+    const first = await runAccountConversationTurn(test.dependencies, original);
+    // The first result represents a committed M5A7A checkpoint whose response
+    // the caller did not receive. The dependency owns the durable replay proof.
+    const retry = await runAccountConversationTurn(test.dependencies, original);
+    expect(retry).toEqual(first);
+    expect(test.decide).toHaveBeenCalledTimes(1);
+    expect(test.turns.setRoutingResolutionOnce).toHaveBeenCalledTimes(1);
+    expect(test.materializeFoodDay).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a missing-target date pending and retries materialization after targets are configured", async () => {
+    const test = harness({
+      modelDecision: () => ({ kind: "DATE_TARGET", localDate: "2026-10-14" }),
+    });
+    test.materializeFoodDay
+      .mockResolvedValueOnce({ kind: "TARGETS_REQUIRED" })
+      .mockResolvedValueOnce({
+        kind: "FOOD_DAY_READY",
+        foodDayId,
+        source: "CREATED",
+      });
+    const original = request();
+    expect(
+      await runAccountConversationTurn(test.dependencies, original),
+    ).toEqual({
+      kind: "TARGETS_REQUIRED",
+      localDate: "2026-10-14",
+    });
+    expect(test.turns.turn).toMatchObject({
+      status: "PENDING",
+      routingResolution: { schema, kind: "DATE_TARGET" },
+      resolvedFoodDayId: null,
+      executionPlan: null,
+      response: null,
+    });
+    expect(
+      await runAccountConversationTurn(test.dependencies, original),
+    ).toMatchObject({
+      kind: "FOOD_DAY_READY",
+      foodDayId,
+      source: "CREATED",
+    });
+    expect(test.decide).toHaveBeenCalledTimes(1);
+    expect(test.turns.setRoutingResolutionOnce).toHaveBeenCalledTimes(1);
+    expect(test.materializeFoodDay).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves an ambiguous date pending and allows a later canonical materialization retry", async () => {
+    const test = harness({
+      modelDecision: () => ({ kind: "DATE_TARGET", localDate: "2026-10-14" }),
+    });
+    test.materializeFoodDay
+      .mockResolvedValueOnce({ kind: "AMBIGUOUS_EXISTING_DAYS" })
+      .mockResolvedValueOnce({
+        kind: "FOOD_DAY_READY",
+        foodDayId,
+        source: "EXISTING",
+      });
+    const original = request();
+    expect(
+      await runAccountConversationTurn(test.dependencies, original),
+    ).toEqual({
+      kind: "AMBIGUOUS_EXISTING_DAYS",
+      localDate: "2026-10-14",
+    });
+    expect(test.turns.turn).toMatchObject({
+      status: "PENDING",
+      executionPlan: null,
+      response: null,
+    });
+    expect(
+      await runAccountConversationTurn(test.dependencies, original),
+    ).toMatchObject({
+      kind: "FOOD_DAY_READY",
+      foodDayId,
+      source: "EXISTING",
+    });
+    expect(test.decide).toHaveBeenCalledTimes(1);
+    expect(test.materializeFoodDay).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    new AccountTurnMaterializationIntegrityError(),
+    new AccountTurnMaterializationIneligibleError("TURN_NOT_FOUND"),
+  ])("propagates typed materialization failure %s", async (error) => {
+    const test = harness({
+      modelDecision: () => ({ kind: "DATE_TARGET", localDate: "2026-10-14" }),
+    });
+    test.materializeFoodDay.mockRejectedValueOnce(error);
+    await expect(
+      runAccountConversationTurn(test.dependencies, request()),
+    ).rejects.toBe(error);
+    expect(test.turns.turn?.routingResolution).toMatchObject({
+      kind: "DATE_TARGET",
+    });
+    expect(test.decide).toHaveBeenCalledTimes(1);
+    expect(test.materializeFoodDay).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays a concurrent completion returned by resolution persistence without materializing", async () => {
+    const test = harness({
+      modelDecision: () => ({ kind: "DATE_TARGET", localDate: "2026-10-14" }),
+    });
+    test.turns.raceCompletedResponse = "  concurrent stored reply  ";
+    expect(
+      await runAccountConversationTurn(test.dependencies, request()),
+    ).toEqual({
+      kind: "COMPLETED_REPLAY",
+      response: "  concurrent stored reply  ",
+    });
+    expect(test.materializeFoodDay).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      resolution: { schema, kind: "EXISTING_DAY", foodDayId },
+      expected: {
+        kind: "FOOD_DAY_READY",
+        foodDayId,
+        source: "RESOLVED_EXISTING",
+        resolution: { schema, kind: "EXISTING_DAY", foodDayId },
+      },
+    },
+    {
+      resolution: {
+        schema,
+        kind: "EXISTING_ENTRY_REFERENCE",
+        foodDayId,
+        entryId,
+        revision: 3,
+      },
+      expected: {
+        kind: "FOOD_DAY_READY",
+        foodDayId,
+        source: "RESOLVED_EXISTING",
+        resolution: {
+          schema,
+          kind: "EXISTING_ENTRY_REFERENCE",
+          foodDayId,
+          entryId,
+          revision: 3,
+        },
+      },
+    },
+    {
+      resolution: { schema, kind: "DAYLESS" },
+      expected: { kind: "DAYLESS_READY" },
+    },
+    {
+      resolution: { schema, kind: "CLARIFY", question: "Which day?" },
+      expected: { kind: "CLARIFICATION_READY", question: "Which day?" },
+    },
+  ] as const)(
+    "returns a persisted $resolution.kind without routing or materialization",
+    async ({ resolution, expected }) => {
+      const test = harness();
+      const original = request("Hey.");
+      await runAccountConversationTurn(test.dependencies, original);
+      test.turns.turn = {
+        ...test.turns.turn!,
+        routingResolution: resolution,
+        resolvedFoodDayId:
+          resolution.kind === "EXISTING_DAY" ||
+          resolution.kind === "EXISTING_ENTRY_REFERENCE"
+            ? foodDayId
+            : null,
+      };
+      test.decide.mockClear();
+      test.listRoutingCandidatesByLocalDate.mockClear();
+      test.turns.setRoutingResolutionOnce.mockClear();
+      test.materializeFoodDay.mockClear();
+      expect(
+        await runAccountConversationTurn(test.dependencies, original),
+      ).toEqual(expected);
+      expect(test.decide).not.toHaveBeenCalled();
+      expect(test.listRoutingCandidatesByLocalDate).not.toHaveBeenCalled();
+      expect(test.turns.setRoutingResolutionOnce).not.toHaveBeenCalled();
+      expect(test.materializeFoodDay).not.toHaveBeenCalled();
+      expect(test.turns.turn).toMatchObject({
+        status: "PENDING",
+        executionPlan: null,
+        response: null,
+      });
     },
   );
 
@@ -298,10 +605,7 @@ describe("durable account-turn routing coordinator", () => {
     test.turns.raceWinner = { schema, kind: "CLARIFY", question: "Which day?" };
     expect(
       await runAccountConversationTurn(test.dependencies, request("Hey.")),
-    ).toEqual({
-      kind: "RESOLUTION_READY",
-      resolution: test.turns.raceWinner,
-    });
+    ).toEqual({ kind: "CLARIFICATION_READY", question: "Which day?" });
     expect(test.turns.turn?.routingResolution).toEqual(test.turns.raceWinner);
   });
 
@@ -318,8 +622,7 @@ describe("durable account-turn routing coordinator", () => {
     await expect(
       runAccountConversationTurn(test.dependencies, original),
     ).resolves.toEqual({
-      kind: "RESOLUTION_READY",
-      resolution: { schema, kind: "DAYLESS" },
+      kind: "DAYLESS_READY",
     });
     expect(test.decide).toHaveBeenCalledTimes(2);
   });
@@ -339,6 +642,26 @@ describe("durable account-turn routing coordinator", () => {
     }
     expect(test.findByUser).not.toHaveBeenCalled();
     expect(test.decide).not.toHaveBeenCalled();
+    expect(test.materializeFoodDay).not.toHaveBeenCalled();
+  });
+
+  it("rejects a changed request against a persisted date before materialization", async () => {
+    const test = harness({
+      modelDecision: () => ({ kind: "DATE_TARGET", localDate: "2026-10-14" }),
+    });
+    await runAccountConversationTurn(test.dependencies, request());
+    test.materializeFoodDay.mockClear();
+    test.decide.mockClear();
+    for (const changed of [
+      request("Today I had bread."),
+      request("Today I had oats.", "retry-one", null),
+    ]) {
+      await expect(
+        runAccountConversationTurn(test.dependencies, changed),
+      ).rejects.toBeInstanceOf(AccountTurnIdempotencyConflictError);
+    }
+    expect(test.decide).not.toHaveBeenCalled();
+    expect(test.materializeFoodDay).not.toHaveBeenCalled();
   });
 
   it("supports null calendar context without date queries or server-clock inference", async () => {
@@ -363,13 +686,20 @@ describe("durable account-turn routing coordinator", () => {
       expect(
         await runAccountConversationTurn(test.dependencies, request(message)),
       ).toEqual({
-        kind: "RESOLUTION_READY",
+        kind: "FOOD_DAY_READY",
+        foodDayId,
+        source: "CREATED",
         resolution: { schema, kind: "DATE_TARGET", localDate },
       });
       expect(
         test.listRoutingCandidatesByLocalDate.mock.calls.map((call) => call[1]),
       ).toEqual(["2026-10-14", "2026-10-13"]);
       expect(test.turns.turn?.resolvedFoodDayId).toBeNull();
+      expect(test.materializeFoodDay).toHaveBeenCalledTimes(1);
+      expect(test.materializeFoodDay).toHaveBeenCalledWith({
+        trustedUserId: userId,
+        turnId: test.turns.turn?.id,
+      });
     },
   );
 
@@ -387,7 +717,9 @@ describe("durable account-turn routing coordinator", () => {
       request("On 2026-10-10 I had pasta."),
     );
     expect(result).toEqual({
-      kind: "RESOLUTION_READY",
+      kind: "FOOD_DAY_READY",
+      foodDayId,
+      source: "RESOLVED_EXISTING",
       resolution: { schema, kind: "EXISTING_DAY", foodDayId },
     });
     expect(
@@ -397,6 +729,35 @@ describe("durable account-turn routing coordinator", () => {
     expect(JSON.stringify(test.turns.turn?.routingResolution)).not.toContain(
       "day_",
     );
+    expect(test.materializeFoodDay).not.toHaveBeenCalled();
+  });
+
+  it("materializes the exact persisted literal ISO date without reparsing it", async () => {
+    const test = harness({
+      explicit: bounded([]),
+      modelDecision: () => ({ kind: "DATE_TARGET", localDate: "2026-10-10" }),
+    });
+    expect(
+      await runAccountConversationTurn(
+        test.dependencies,
+        request("On 2026-10-10 I had pasta."),
+      ),
+    ).toEqual({
+      kind: "FOOD_DAY_READY",
+      foodDayId,
+      source: "CREATED",
+      resolution: { schema, kind: "DATE_TARGET", localDate: "2026-10-10" },
+    });
+    expect(test.turns.turn?.routingResolution).toEqual({
+      schema,
+      kind: "DATE_TARGET",
+      localDate: "2026-10-10",
+    });
+    expect(test.materializeFoodDay).toHaveBeenCalledTimes(1);
+    expect(test.materializeFoodDay).toHaveBeenCalledWith({
+      trustedUserId: userId,
+      turnId: test.turns.turn?.id,
+    });
   });
 
   it("persists a truncated explicit-date ambiguity instead of trusting DATE_TARGET", async () => {
@@ -409,8 +770,7 @@ describe("durable account-turn routing coordinator", () => {
       request("On 2026-10-10 I had pasta."),
     );
     expect(result).toMatchObject({
-      kind: "RESOLUTION_READY",
-      resolution: { schema, kind: "CLARIFY" },
+      kind: "CLARIFICATION_READY",
     });
     expect(test.turns.turn?.resolvedFoodDayId).toBeNull();
   });
@@ -429,8 +789,7 @@ describe("durable account-turn routing coordinator", () => {
         request("On 2026-10-10 I had pasta."),
       ),
     ).toMatchObject({
-      kind: "RESOLUTION_READY",
-      resolution: { schema, kind: "CLARIFY" },
+      kind: "CLARIFICATION_READY",
     });
     expect(test.turns.turn?.resolvedFoodDayId).toBeNull();
   });
@@ -451,7 +810,9 @@ describe("durable account-turn routing coordinator", () => {
         request("Actually I only ate one of those rotis."),
       ),
     ).toEqual({
-      kind: "RESOLUTION_READY",
+      kind: "FOOD_DAY_READY",
+      foodDayId,
+      source: "RESOLVED_EXISTING",
       resolution: {
         schema,
         kind: "EXISTING_ENTRY_REFERENCE",
@@ -462,6 +823,7 @@ describe("durable account-turn routing coordinator", () => {
     });
     expect(test.turns.turn?.resolvedFoodDayId).toBe(foodDayId);
     expect(test.turns.turn?.status).toBe("PENDING");
+    expect(test.materializeFoodDay).not.toHaveBeenCalled();
   });
 
   it("clarifies multiple distinct literal ISO dates before choosing a bucket", async () => {
@@ -471,12 +833,8 @@ describe("durable account-turn routing coordinator", () => {
       request("On 2026-10-10 or 2026-10-11 I had pasta."),
     );
     expect(result).toEqual({
-      kind: "RESOLUTION_READY",
-      resolution: {
-        schema,
-        kind: "CLARIFY",
-        question: "Which date did you mean?",
-      },
+      kind: "CLARIFICATION_READY",
+      question: "Which date did you mean?",
     });
     expect(test.listRoutingCandidatesByLocalDate).not.toHaveBeenCalled();
     expect(test.decide).not.toHaveBeenCalled();

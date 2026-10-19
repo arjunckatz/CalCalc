@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   parseAccountTurnRoutingResolution,
   type AccountTurnRoutingResolution,
+  type MaterializeAccountTurnFoodDayResult,
   type PostgresAccountConversationTurnRepository,
 } from "@cal-calc/persistence";
 
@@ -32,6 +33,10 @@ export interface AccountConversationTurnDependencies {
   >;
   readonly routing: RoutingRepositories;
   readonly model: FoodDayTargetResolutionModel;
+  readonly materializeFoodDay: (input: {
+    readonly trustedUserId: string;
+    readonly turnId: string;
+  }) => Promise<MaterializeAccountTurnFoodDayResult>;
 }
 
 export interface RunAccountConversationTurnRequest extends Omit<
@@ -44,12 +49,30 @@ export interface RunAccountConversationTurnRequest extends Omit<
 export type AccountConversationTurnResult =
   | { readonly kind: "COMPLETED_REPLAY"; readonly response: string }
   | {
-      readonly kind: "RESOLUTION_READY";
-      readonly resolution: AccountTurnRoutingResolution;
-    };
+      readonly kind: "FOOD_DAY_READY";
+      readonly foodDayId: string;
+      readonly source: "CREATED" | "EXISTING";
+      readonly resolution: Extract<
+        AccountTurnRoutingResolution,
+        { kind: "DATE_TARGET" }
+      >;
+    }
+  | {
+      readonly kind: "FOOD_DAY_READY";
+      readonly foodDayId: string;
+      readonly source: "RESOLVED_EXISTING";
+      readonly resolution: Extract<
+        AccountTurnRoutingResolution,
+        { kind: "EXISTING_DAY" | "EXISTING_ENTRY_REFERENCE" }
+      >;
+    }
+  | { readonly kind: "TARGETS_REQUIRED"; readonly localDate: string }
+  | { readonly kind: "AMBIGUOUS_EXISTING_DAYS"; readonly localDate: string }
+  | { readonly kind: "DAYLESS_READY" }
+  | { readonly kind: "CLARIFICATION_READY"; readonly question: string };
 
-/** Durable routing checkpoint only: no transaction spans model inference and
- * no FoodDay, FoodEntry, pointer, plan, tool, or public response is written. */
+/** Durable routing and optional FoodDay acquisition checkpoints only. No
+ * transaction spans model inference; no pointer, plan, tool, or response write. */
 export async function runAccountConversationTurn(
   dependencies: AccountConversationTurnDependencies,
   request: RunAccountConversationTurnRequest,
@@ -79,10 +102,12 @@ export async function runAccountConversationTurn(
     return { kind: "COMPLETED_REPLAY", response: existing.response };
   }
   if (existing.routingResolution !== null) {
-    return {
-      kind: "RESOLUTION_READY",
-      resolution: parseAccountTurnRoutingResolution(existing.routingResolution),
-    };
+    return resolveExecutionTarget(
+      dependencies,
+      identity.userId,
+      existing.id,
+      parseAccountTurnRoutingResolution(existing.routingResolution),
+    );
   }
 
   const explicit = inspectLiteralIsoDates(identity.userMessage);
@@ -118,10 +143,57 @@ export async function runAccountConversationTurn(
   }
   if (saved.routingResolution === null)
     throw new TypeError("Account turn resolution was not persisted.");
-  return {
-    kind: "RESOLUTION_READY",
-    resolution: parseAccountTurnRoutingResolution(saved.routingResolution),
-  };
+  return resolveExecutionTarget(
+    dependencies,
+    identity.userId,
+    saved.id,
+    parseAccountTurnRoutingResolution(saved.routingResolution),
+  );
+}
+
+async function resolveExecutionTarget(
+  dependencies: AccountConversationTurnDependencies,
+  trustedUserId: string,
+  turnId: string,
+  resolution: AccountTurnRoutingResolution,
+): Promise<AccountConversationTurnResult> {
+  switch (resolution.kind) {
+    case "DATE_TARGET": {
+      const materialized = await dependencies.materializeFoodDay({
+        trustedUserId,
+        turnId,
+      });
+      switch (materialized.kind) {
+        case "FOOD_DAY_READY":
+          return {
+            kind: "FOOD_DAY_READY",
+            foodDayId: materialized.foodDayId,
+            source: materialized.source,
+            resolution,
+          };
+        case "TARGETS_REQUIRED":
+          return { kind: "TARGETS_REQUIRED", localDate: resolution.localDate };
+        case "AMBIGUOUS_EXISTING_DAYS":
+          return {
+            kind: "AMBIGUOUS_EXISTING_DAYS",
+            localDate: resolution.localDate,
+          };
+      }
+      throw new TypeError("Unexpected FoodDay materialization outcome.");
+    }
+    case "EXISTING_DAY":
+    case "EXISTING_ENTRY_REFERENCE":
+      return {
+        kind: "FOOD_DAY_READY",
+        foodDayId: resolution.foodDayId,
+        source: "RESOLVED_EXISTING",
+        resolution,
+      };
+    case "DAYLESS":
+      return { kind: "DAYLESS_READY" };
+    case "CLARIFY":
+      return { kind: "CLARIFICATION_READY", question: resolution.question };
+  }
 }
 
 function toPersistedResolution(

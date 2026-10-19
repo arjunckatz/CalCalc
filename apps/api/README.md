@@ -480,7 +480,8 @@ bounded candidate lookup; multiple distinct or invalid literals clarify
 without guessing. A pre-persistence crash may resample, while a post-persistence
 retry returns the first durable winner. No row lock spans model execution.
 
-M5A5 leaves every newly resolved turn PENDING, including CLARIFY and DAYLESS.
+At the M5A5 checkpoint, every newly resolved turn stayed PENDING, including
+CLARIFY and DAYLESS.
 It neither writes an execution plan or active pointer nor loads FoodDay STATE,
 creates FoodDays, executes tools, or completes a public response. Future slices
 must revalidate canonical ownership, existence, and revision before execution;
@@ -488,6 +489,17 @@ clarification follow-ups may need separately designed bounded conversation
 context. Existing-day routing can later hydrate scoped STATE, entry references
 need parent/revision revalidation, date targets need requery or lazy creation,
 and dayless/clarify need their own account-level completion policies.
+
+M5A7B now composes that durable routing checkpoint with the M5A7A lazy
+materializer. Completed turns still replay before routing or materialization;
+pending persisted resolutions bypass semantic inference. Only `DATE_TARGET`
+invokes materialization, which returns a canonical FoodDay, missing-target
+setup need, or same-date ambiguity. Other trusted resolution kinds return
+internal execution-target or clarification outcomes without a materializer
+call. A fresh date resolution can materialize in the same invocation, while a
+retry after either durable checkpoint resumes without resampling the model.
+This remains an internal pre-execution boundary: no STATE, tools, execution
+plan, active pointer, or new completed response is written here.
 
 ## Application-owned mutation identity
 
