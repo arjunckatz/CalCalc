@@ -126,6 +126,31 @@ function requestAt(create: ReturnType<typeof setup>["create"], index = 0) {
 }
 
 describe("OpenAI FoodDay decision binding", () => {
+  it("supplies trusted entry grounding as developer context without routing tokens", async () => {
+    const { create, model } = setup();
+    const entryReference = {
+      entryId: state.entries[0]!.id,
+      expectedRevision: 1,
+    };
+    await model.decide({
+      ...decisionInput("Make that 2 servings"),
+      recentTranscript,
+      entryReference,
+    });
+    const input = requestAt(create).input as Array<{
+      role: string;
+      content: string;
+    }>;
+    expect(input[0]?.role).toBe("developer");
+    expect(JSON.parse(input[0]!.content).trustedEntryReference).toEqual(
+      entryReference,
+    );
+    expect(input[input.length - 1]).toEqual({
+      role: "user",
+      content: "Make that 2 servings",
+    });
+    expect(JSON.stringify(input)).not.toContain("entry_snapshot_");
+  });
   it("requires an injected nonblank model but makes no request on construction", () => {
     const { create } = setup();
     expect(create).not.toHaveBeenCalled();

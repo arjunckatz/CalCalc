@@ -198,18 +198,13 @@ describe("PostgreSQL account conversation substrate", () => {
       turns.setPlanOnce({ ...base, plan: leftPlan }),
       turns.setPlanOnce({ ...base, plan: rightPlan }),
     ]);
-    expect(outcomes.filter((item) => item.status === "fulfilled")).toHaveLength(
-      1,
-    );
-    expect(outcomes.filter((item) => item.status === "rejected")).toHaveLength(
-      1,
-    );
-    const rejected = outcomes.find((item) => item.status === "rejected");
-    expect(rejected).toMatchObject({
-      reason: expect.any(AccountTurnStateConflictError),
-    });
+    expect(outcomes.every((item) => item.status === "fulfilled")).toBe(true);
     const stored = await turns.findByKey(userA, base.turnKey);
     expect(stored?.executionPlan).not.toBeNull();
+    for (const outcome of outcomes) {
+      if (outcome.status !== "fulfilled") throw outcome.reason;
+      expect(outcome.value.executionPlan).toEqual(stored?.executionPlan);
+    }
     await expect(
       pool.query(
         `update public.conversation_turns
@@ -261,6 +256,44 @@ describe("PostgreSQL account conversation substrate", () => {
         [userA, base.turnKey],
       ),
     ).rejects.toThrow("completed conversation turns are immutable");
+  });
+
+  it("stores a target-bound direct-response plan while pending and returns the first durable value", async () => {
+    const base = claimInput(`calcalc:account-turn:v1:${randomUUID()}`);
+    await turns.claimPending({ ...base, id: randomUUID() });
+    await turns.setResolvedTarget({ ...base, foodDayId: dayA });
+    const firstPlan = {
+      schema: "account-turn-plan-v1" as const,
+      foodDayId: dayA,
+      slots: [
+        {
+          index: 0,
+          action: "DIRECT_RESPONSE" as const,
+          command: { response: "Exact answer." },
+        },
+      ],
+    };
+    const first = await turns.setPlanOnce({ ...base, plan: firstPlan });
+    expect(first).toMatchObject({
+      status: "PENDING",
+      response: null,
+      executionPlan: firstPlan,
+    });
+    const losing = await turns.setPlanOnce({
+      ...base,
+      plan: {
+        ...firstPlan,
+        slots: [
+          {
+            index: 0,
+            action: "DIRECT_RESPONSE",
+            command: { response: "Different answer." },
+          },
+        ],
+      },
+    });
+    expect(losing.executionPlan).toEqual(firstPlan);
+    expect(await turns.findByKey(userB, base.turnKey)).toBeNull();
   });
 
   it("returns only the newest eight completed exact transcript pairs oldest to newest", async () => {

@@ -177,3 +177,10 @@ pending/completed status, trusted routing resolution, and both durable target
 columns for pre-execution validation. It does not claim an operation, acquire
 a day, or write a turn. The existing account-materialization PostgreSQL suite
 also verifies this read against the materialized link and cross-owner scope.
+
+The existing `account-turn-plan-v1` JSONB slot envelope also holds M5A8B's
+target-bound initial decision: one `DIRECT_RESPONSE` slot or up to eight ordered
+tool slots. The application validates each command on creation and rehydration.
+`setPlanOnce` keeps the first committed plan; concurrent valid proposers now
+receive that stored winner, including when their proposals differ. The database
+still prevents replacing a committed plan or updating a completed turn.

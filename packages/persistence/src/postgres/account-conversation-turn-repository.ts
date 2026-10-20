@@ -232,11 +232,9 @@ export class PostgresAccountConversationTurnRepository {
     );
     if (updated.rows[0] !== undefined) return parseTurn(updated.rows[0]);
     const existing = await this.requireMatching(input);
-    if (
-      existing.executionPlan !== null &&
-      isDeepStrictEqual(existing.executionPlan, plan)
-    )
-      return existing;
+    // The database's set-once row is authoritative even when concurrent
+    // workers proposed different valid plans before either committed.
+    if (existing.executionPlan !== null) return existing;
     throw new AccountTurnStateConflictError();
   }
 

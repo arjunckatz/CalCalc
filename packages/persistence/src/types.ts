@@ -135,6 +135,7 @@ export type AcceptedAccountTurnCalendarSnapshot = Extract<
 >;
 
 export type AccountTurnPlanAction =
+  | "DIRECT_RESPONSE"
   | "LOG_FOOD"
   | "UPDATE_FOOD_QUANTITY"
   | "REMOVE_FOOD"
@@ -146,6 +147,8 @@ export type AccountTurnPlanAction =
 /** Internal normalized commands only; future execution still validates each action. */
 export interface AccountTurnPlan {
   readonly schema: "account-turn-plan-v1";
+  /** Optional for pre-M5A8B plans; required by the FoodDay planning boundary. */
+  readonly foodDayId?: string;
   readonly slots: readonly {
     readonly index: number;
     readonly action: AccountTurnPlanAction;

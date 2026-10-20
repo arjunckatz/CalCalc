@@ -8,6 +8,7 @@ import type {
 } from "./types.js";
 
 const actions: readonly AccountTurnPlanAction[] = [
+  "DIRECT_RESPONSE",
   "LOG_FOOD",
   "UPDATE_FOOD_QUANTITY",
   "REMOVE_FOOD",
@@ -109,8 +110,10 @@ function validUuid(value: unknown): value is string {
 /** A shape/size-validated internal plan, not raw provider output. */
 export function parseAccountTurnPlan(value: unknown): AccountTurnPlan {
   if (
-    !recordWithKeys(value, ["schema", "slots"]) ||
+    (!recordWithKeys(value, ["schema", "slots"]) &&
+      !recordWithKeys(value, ["schema", "foodDayId", "slots"])) ||
     value.schema !== "account-turn-plan-v1" ||
+    (Object.hasOwn(value, "foodDayId") && !validUuid(value.foodDayId)) ||
     !Array.isArray(value.slots) ||
     Object.getPrototypeOf(value.slots) !== Array.prototype ||
     value.slots.length < 1 ||
@@ -142,7 +145,13 @@ export function parseAccountTurnPlan(value: unknown): AccountTurnPlan {
       command: copyJson(slot.command, 0) as JsonObject,
     };
   });
-  const plan: AccountTurnPlan = { schema: "account-turn-plan-v1", slots };
+  const plan: AccountTurnPlan = {
+    schema: "account-turn-plan-v1",
+    ...(Object.hasOwn(value, "foodDayId")
+      ? { foodDayId: value.foodDayId as string }
+      : {}),
+    slots,
+  };
   if (JSON.stringify(plan).length > 16 * 1024) {
     throw new TypeError("Account turn execution plan is too large.");
   }

@@ -113,7 +113,7 @@ export async function runFoodDayTurn(
     trustedUserId: input.trustedUserId,
     foodDayId: input.foodDayId,
   });
-  const decision = parseDecision(
+  const decision = parseInitialFoodDayModelDecision(
     await dependencies.model.decide({
       userMessage,
       state,
@@ -218,7 +218,9 @@ function parseFinalizationStep(value: unknown): FoodDayModelFinalizationStep {
   throw new FoodDayTurnValidationError("INVALID_MODEL_DECISION");
 }
 
-function parseDecision(value: unknown): FoodDayModelDecision {
+export function parseInitialFoodDayModelDecision(
+  value: unknown,
+): FoodDayModelDecision {
   try {
     return inspectDecision(value);
   } catch (error) {

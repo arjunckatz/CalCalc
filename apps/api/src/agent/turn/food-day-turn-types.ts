@@ -26,6 +26,11 @@ export interface FoodDayModelDecisionInput {
   readonly state: FoodDayState;
   readonly recentTranscript: readonly FoodDayTurnTranscriptItem[];
   readonly calendarContext?: FoodDayCalendarContext;
+  /** Validated durable reference, not a model-selected or routing-token ID. */
+  readonly entryReference?: {
+    readonly entryId: string;
+    readonly expectedRevision: number;
+  };
 }
 
 export type FoodDayModelDecision =

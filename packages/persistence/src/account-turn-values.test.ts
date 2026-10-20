@@ -48,6 +48,21 @@ describe("account turn value boundaries", () => {
   });
 
   it("accepts only bounded, ordered, JSON-data-only internal slots", () => {
+    const responsePlan = {
+      schema: "account-turn-plan-v1",
+      foodDayId: "20000000-0000-4000-8000-000000000001",
+      slots: [
+        {
+          index: 0,
+          action: "DIRECT_RESPONSE",
+          command: { response: "Hello." },
+        },
+      ],
+    };
+    expect(parseAccountTurnPlan(responsePlan)).toEqual(responsePlan);
+    expect(() =>
+      parseAccountTurnPlan({ ...responsePlan, foodDayId: "invalid" }),
+    ).toThrow();
     const parsed = parseAccountTurnPlan({
       schema: "account-turn-plan-v1",
       slots: [

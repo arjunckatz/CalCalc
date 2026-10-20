@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { PostgresExecutor } from "./food-entry-repository.js";
 import {
   AccountTurnIdempotencyConflictError,
-  AccountTurnStateConflictError,
   PostgresAccountConversationTurnRepository,
 } from "./account-conversation-turn-repository.js";
 
@@ -273,7 +272,7 @@ describe("PostgresAccountConversationTurnRepository", () => {
     );
   });
 
-  it("sets a plan once, replays the same plan, and refuses replacement", async () => {
+  it("sets a plan once and returns the stored winner for matching or different proposals", async () => {
     const planned = row({ execution_plan: plan });
     const first = new ScriptedExecutor([[planned]]);
     await expect(
@@ -307,7 +306,7 @@ describe("PostgresAccountConversationTurnRepository", () => {
           ],
         },
       }),
-    ).rejects.toBeInstanceOf(AccountTurnStateConflictError);
+    ).resolves.toMatchObject({ executionPlan: plan });
   });
 
   it("completes once and returns the exact stored public response on replay", async () => {

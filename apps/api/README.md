@@ -511,6 +511,17 @@ STATE is a current read, not a lock held across later model work: future writes
 must still use domain preconditions and optimistic revision checks. No account
 transcript, tool, model, plan, pointer update, or public response is involved.
 
+M5A8B adds a separate initial planning composition. A completed turn replays
+its public response first; a pending turn with an execution plan replays that
+plan before materialization, STATE, transcript, or model work. Fresh food turns
+use M5A8A STATE, the bounded completed account transcript, and one initial
+FoodDay model decision. The accepted direct response or up to eight ordered
+validated tool calls are stored in the existing versioned, target-bound plan
+slots. Entry revisions and completeness CAS inputs are frozen; a batch that
+mutates one entry or completeness twice is rejected rather than assigned
+impossible preconditions. This boundary does not run tools, finalize a response,
+complete the turn, or change the active pointer/conversation version.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`

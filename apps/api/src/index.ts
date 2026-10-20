@@ -56,6 +56,12 @@ export {
   type PrepareAccountTurnFoodDayExecutionResult,
 } from "./conversation/prepare-account-turn-food-day-execution.js";
 export {
+  runAccountConversationPlanningTurn,
+  AccountTurnPlanIntegrityError,
+  type RunAccountConversationPlanningTurnDependencies,
+  type AccountConversationPlanningTurnResult,
+} from "./conversation/run-account-conversation-planning-turn.js";
+export {
   createOpenAIFoodDayTargetModel,
   OpenAIFoodDayTargetModelError,
   type OpenAIFoodDayTargetModelConfig,

@@ -168,9 +168,20 @@ function decisionInput(
     input.recentTranscript.length === 0 &&
     input.calendarContext === undefined
   ) {
-    return JSON.stringify({ state, userMessage: input.userMessage });
+    return JSON.stringify({
+      state,
+      ...(input.entryReference === undefined
+        ? {}
+        : { trustedEntryReference: input.entryReference }),
+      userMessage: input.userMessage,
+    });
   }
-  const authoritativeContext = JSON.stringify({ canonicalFoodDayState: state });
+  const authoritativeContext = JSON.stringify({
+    canonicalFoodDayState: state,
+    ...(input.entryReference === undefined
+      ? {}
+      : { trustedEntryReference: input.entryReference }),
+  });
   return conversationalInput(
     input.calendarContext === undefined
       ? authoritativeContext

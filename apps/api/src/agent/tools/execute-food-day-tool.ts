@@ -37,7 +37,11 @@ import {
   updateFoodEntryMutation,
   type UpdateFoodEntryMutationResult,
 } from "../../mutations/update-food-entry.js";
-import { parseFoodDayToolCall, ToolValidationError } from "./food-day-tools.js";
+import {
+  parseFoodDayToolCall,
+  ToolValidationError,
+  type FoodDayToolCall,
+} from "./food-day-tools.js";
 import {
   projectBodyWeightHistory,
   type ModelBodyWeightHistory,
@@ -154,19 +158,11 @@ export async function executeFoodDayTool(
         }),
       };
     case "LOG_BODY_WEIGHT":
-      if (
-        !mentionsSupportedDate(
-          trustedContext.userMessage,
-          call.arguments.localDate,
-          trustedContext.calendarContext,
-        ) ||
-        !mentionsExplicitSourceUnit(
-          trustedContext.userMessage,
-          call.arguments.sourceUnit,
-        )
-      ) {
-        throw new ToolValidationError();
-      }
+      validateBodyWeightLogEvidence(
+        trustedContext.userMessage,
+        call.arguments,
+        trustedContext.calendarContext,
+      );
       return {
         name: call.name,
         result: await logBodyWeightMutation(dependencies, {
@@ -178,6 +174,27 @@ export async function executeFoodDayTool(
       };
     case "GET_BODY_WEIGHT_HISTORY":
       return executeBodyWeightHistoryRead(dependencies, trustedUserId);
+  }
+}
+
+/** Shared, side-effect-free evidence guard for planning and execution. */
+export function validateBodyWeightLogEvidence(
+  userMessage: string,
+  argumentsValue: Extract<
+    FoodDayToolCall,
+    { name: "LOG_BODY_WEIGHT" }
+  >["arguments"],
+  calendarContext: FoodDayCalendarContext | undefined,
+): void {
+  if (
+    !mentionsSupportedDate(
+      userMessage,
+      argumentsValue.localDate,
+      calendarContext,
+    ) ||
+    !mentionsExplicitSourceUnit(userMessage, argumentsValue.sourceUnit)
+  ) {
+    throw new ToolValidationError();
   }
 }
 
