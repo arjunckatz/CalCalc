@@ -3,10 +3,26 @@ import { describe, expect, it } from "vitest";
 import {
   parseAccountTurnCalendarSnapshot,
   parseAccountTurnPlan,
+  parseAccountTurnStepResult,
   parseAccountTurnRoutingResolution,
 } from "./account-turn-values.js";
 
 describe("account turn value boundaries", () => {
+  it("rehydrates only versioned, bounded, application-owned step-result JSON", () => {
+    const valid = {
+      schema: "account-turn-step-result-v1",
+      action: "LOG_FOOD",
+      outcome: { entryId: "30000000-0000-4000-8000-000000000001", revision: 1 },
+    };
+    expect(parseAccountTurnStepResult(valid)).toEqual(valid);
+    for (const bad of [
+      { ...valid, schema: "account-turn-step-result-v2" },
+      { ...valid, action: "DIRECT_RESPONSE" },
+      { ...valid, providerCallId: "untrusted" },
+      { ...valid, outcome: { entryId: undefined } },
+    ])
+      expect(() => parseAccountTurnStepResult(bad)).toThrow();
+  });
   it("preserves an exact accepted calendar date or explicit null", () => {
     expect(parseAccountTurnCalendarSnapshot(null)).toBeNull();
     expect(

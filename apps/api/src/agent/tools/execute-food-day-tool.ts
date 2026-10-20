@@ -24,7 +24,10 @@ import {
   logBodyWeightMutation,
   type LogBodyWeightMutationResult,
 } from "../../mutations/log-body-weight.js";
-import type { IdempotencyKey } from "../../mutations/mutation-identity.js";
+import type {
+  IdempotencyKey,
+  MutationOperationScope,
+} from "../../mutations/mutation-identity.js";
 import {
   removeFoodEntryMutation,
   type RemoveFoodEntryMutationResult,
@@ -55,7 +58,9 @@ export interface TrustedFoodDayToolContext {
   readonly trustedUserId: string;
   readonly foodDayId: string;
   readonly idempotencyKey: IdempotencyKey;
-  /** Completeness from the fresh canonical STATE shown to the model. */
+  /** Reserved account plan steps use their own semantic-operation namespace. */
+  readonly operationScope?: MutationOperationScope;
+  /** Completeness from the STATE shown to the model, or its frozen plan precondition. */
   readonly stateCompleteness: FoodDayCompleteness;
   /** Exact current turn text; date/unit evidence must come from this message. */
   readonly userMessage: string;
@@ -99,6 +104,7 @@ export async function executeFoodDayTool(
 ): Promise<FoodDayToolResult> {
   const call = parseFoodDayToolCall(untrustedToolCall);
   const { trustedUserId, idempotencyKey } = trustedContext;
+  const operationScope = trustedContext.operationScope ?? "FOOD_DAY_TURN_TOOL";
   switch (call.name) {
     case "LOG_FOOD":
       return {
@@ -106,7 +112,7 @@ export async function executeFoodDayTool(
         result: await createFoodEntryMutation(dependencies, {
           trustedUserId,
           idempotencyKey,
-          operationScope: "FOOD_DAY_TURN_TOOL",
+          operationScope,
           command: { foodDayId: trustedContext.foodDayId, ...call.arguments },
         }),
       };
@@ -116,7 +122,7 @@ export async function executeFoodDayTool(
         result: await updateFoodEntryMutation(dependencies, {
           trustedUserId,
           idempotencyKey,
-          operationScope: "FOOD_DAY_TURN_TOOL",
+          operationScope,
           trustedFoodDayId: trustedContext.foodDayId,
           command: call.arguments,
         }),
@@ -127,7 +133,7 @@ export async function executeFoodDayTool(
         result: await removeFoodEntryMutation(dependencies, {
           trustedUserId,
           idempotencyKey,
-          operationScope: "FOOD_DAY_TURN_TOOL",
+          operationScope,
           trustedFoodDayId: trustedContext.foodDayId,
           command: call.arguments,
         }),
@@ -138,7 +144,7 @@ export async function executeFoodDayTool(
         result: await changeFoodEntryStatusMutation(dependencies, {
           trustedUserId,
           idempotencyKey,
-          operationScope: "FOOD_DAY_TURN_TOOL",
+          operationScope,
           trustedFoodDayId: trustedContext.foodDayId,
           command: call.arguments,
         }),
@@ -150,7 +156,7 @@ export async function executeFoodDayTool(
           trustedUserId,
           trustedFoodDayId: trustedContext.foodDayId,
           idempotencyKey,
-          operationScope: "FOOD_DAY_TURN_TOOL",
+          operationScope,
           command: {
             expectedCompleteness: trustedContext.stateCompleteness,
             targetCompleteness: call.arguments.targetCompleteness,
@@ -168,7 +174,7 @@ export async function executeFoodDayTool(
         result: await logBodyWeightMutation(dependencies, {
           trustedUserId,
           idempotencyKey,
-          operationScope: "FOOD_DAY_TURN_TOOL",
+          operationScope,
           command: call.arguments,
         }),
       };

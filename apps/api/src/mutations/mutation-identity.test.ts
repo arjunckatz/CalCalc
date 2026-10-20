@@ -38,6 +38,22 @@ function fingerprint(semanticPayload: SemanticValue): string {
 }
 
 describe("application-owned mutation identity", () => {
+  it("reserves an account-plan-step namespace and fingerprints its child identity", () => {
+    const child = input({ operationScope: "ACCOUNT_TURN_PLAN_STEP" });
+    const first = deriveMutationIdentity(child);
+    const changedChild = deriveMutationIdentity({
+      ...child,
+      idempotencyKey: parseIdempotencyKey("different-plan-ordinal"),
+    });
+    const legacy = deriveMutationIdentity(
+      input({ operationScope: "FOOD_DAY_TURN_TOOL" }),
+    );
+    expect(first.operationKey).toMatch(/^calcalc:v1:ACCOUNT_TURN_PLAN_STEP:/);
+    expect(first.operationKey).not.toBe(legacy.operationKey);
+    expect(first.requestFingerprint).not.toBe(legacy.requestFingerprint);
+    expect(first.requestFingerprint).not.toBe(changedChild.requestFingerprint);
+    expect(first).toEqual(deriveMutationIdentity(child));
+  });
   it("derives identical replay identity from separately constructed inputs", () => {
     expect(deriveMutationIdentity(input())).toEqual(
       deriveMutationIdentity(input()),

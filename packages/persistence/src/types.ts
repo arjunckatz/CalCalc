@@ -156,6 +156,21 @@ export interface AccountTurnPlan {
   }[];
 }
 
+/** Application-owned, versioned outcome of one immutable plan slot. */
+export interface AccountTurnStepResult {
+  readonly schema: "account-turn-step-result-v1";
+  readonly action: AccountTurnPlanAction;
+  readonly outcome: JsonObject;
+}
+
+export interface PersistedAccountTurnStepResult {
+  readonly turnId: string;
+  readonly userId: string;
+  readonly ordinal: number;
+  readonly result: AccountTurnStepResult;
+  readonly createdAt: string;
+}
+
 /** Trusted, durable orchestration checkpoint; never a model token or execution plan. */
 export type AccountTurnRoutingResolution =
   | {

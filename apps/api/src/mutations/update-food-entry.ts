@@ -116,7 +116,8 @@ function validateTrustedFoodDayScope(
   trustedFoodDayId: string | undefined,
 ): void {
   if (
-    (operationScope === "FOOD_DAY_TURN_TOOL" &&
+    ((operationScope === "FOOD_DAY_TURN_TOOL" ||
+      operationScope === "ACCOUNT_TURN_PLAN_STEP") &&
       trustedFoodDayId === undefined) ||
     (trustedFoodDayId !== undefined &&
       (typeof trustedFoodDayId !== "string" || trustedFoodDayId.trim() === ""))

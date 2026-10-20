@@ -522,6 +522,18 @@ mutates one entry or completeness twice is rejected rather than assigned
 impossible preconditions. This boundary does not run tools, finalize a response,
 complete the turn, or change the active pointer/conversation version.
 
+M5A8C executes only a persisted plan. It skips a completed turn, returns a
+durable direct response without tools, or resumes the first missing ordinal in
+a tool sequence. Each mutation uses a reserved account-turn/plan-step child key
+and the existing exactly-once application mutation; its stable semantic effect
+is checkpointed separately from the immutable plan. A committed mutation whose
+checkpoint is lost replays under the same child identity. A read may be
+performed again until its first result is durably checkpointed; subsequent
+retries use that stored result. Domain/infrastructure exceptions stop execution
+without checkpointing the failed step. This boundary does not plan, finalize,
+complete the turn, or update the account's active FoodDay/version. Real database
+proof is opt-in via `test:integration:account-plan` after the forward migration.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`

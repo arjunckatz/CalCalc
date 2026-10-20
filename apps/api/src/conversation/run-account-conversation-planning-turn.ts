@@ -218,7 +218,7 @@ async function priorOutcome(
   return { kind: "PLAN_READY", turnId: turn.id, plan };
 }
 
-function durableTarget(
+export function durableTarget(
   checkpoint: AccountTurnExecutionCheckpoint | null,
   turn: PersistedAccountTurn,
 ): string {

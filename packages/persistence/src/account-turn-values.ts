@@ -2,6 +2,7 @@ import type {
   AccountTurnCalendarSnapshot,
   AccountTurnPlan,
   AccountTurnPlanAction,
+  AccountTurnStepResult,
   AccountTurnRoutingResolution,
   JsonObject,
   JsonValue,
@@ -156,6 +157,28 @@ export function parseAccountTurnPlan(value: unknown): AccountTurnPlan {
     throw new TypeError("Account turn execution plan is too large.");
   }
   return plan;
+}
+
+/** JSONB transport guard; action-specific outcome checks live at the application boundary. */
+export function parseAccountTurnStepResult(
+  value: unknown,
+): AccountTurnStepResult {
+  if (
+    !recordWithKeys(value, ["schema", "action", "outcome"]) ||
+    value.schema !== "account-turn-step-result-v1" ||
+    !actions.includes(value.action as AccountTurnPlanAction) ||
+    value.action === "DIRECT_RESPONSE" ||
+    !isPlainRecord(value.outcome)
+  )
+    throw new TypeError("Invalid account turn step result.");
+  const result: AccountTurnStepResult = {
+    schema: "account-turn-step-result-v1",
+    action: value.action as AccountTurnPlanAction,
+    outcome: copyJson(value.outcome, 0) as JsonObject,
+  };
+  if (JSON.stringify(result).length > 64 * 1024)
+    throw new TypeError("Account turn step result is too large.");
+  return result;
 }
 
 export function parseAccountTurnCalendarSnapshot(

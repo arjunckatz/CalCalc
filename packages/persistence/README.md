@@ -184,3 +184,13 @@ tool slots. The application validates each command on creation and rehydration.
 `setPlanOnce` keeps the first committed plan; concurrent valid proposers now
 receive that stored winner, including when their proposals differ. The database
 still prevents replacing a committed plan or updating a completed turn.
+
+M5A8C adds server-owned `account_turn_step_results`, separate from the immutable
+plan. Its owner-preserving FK, parent-row lock, plan-slot/action check and
+contiguous-prefix trigger guard each insert; `(turn_id, ordinal)` is set once
+with `ON CONFLICT DO NOTHING` convergence. The DB owns `created_at`, rejects
+ordinary outcome updates, and grants neither anon nor authenticated direct
+access. Repository reads bind owner and turn. A direct server maintenance purge
+may delete an account turn and cascade its step results, matching existing
+revision-history cleanup conventions. The application validates each stored
+action-specific outcome before resuming execution.

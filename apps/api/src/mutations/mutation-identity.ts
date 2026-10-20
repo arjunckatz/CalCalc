@@ -10,7 +10,8 @@ export type MutationAction =
   | "LOG_BODY_WEIGHT"
   | "SET_ACCOUNT_NUTRITION_TARGETS";
 
-export type MutationOperationScope = "FOOD_DAY_TURN_TOOL";
+export type MutationOperationScope =
+  "FOOD_DAY_TURN_TOOL" | "ACCOUNT_TURN_PLAN_STEP";
 
 export type SemanticValue =
   | null
@@ -94,7 +95,8 @@ export function deriveMutationIdentity(
   }
   if (
     input.operationScope !== undefined &&
-    input.operationScope !== "FOOD_DAY_TURN_TOOL"
+    input.operationScope !== "FOOD_DAY_TURN_TOOL" &&
+    input.operationScope !== "ACCOUNT_TURN_PLAN_STEP"
   ) {
     throw new MutationIdentityError("INVALID_OPERATION_SCOPE");
   }
@@ -124,6 +126,9 @@ export function deriveMutationIdentity(
       action,
       trustedUserId,
       semanticCommand,
+      ...(input.operationScope === "ACCOUNT_TURN_PLAN_STEP"
+        ? [operationNamespace, retryKey]
+        : []),
     ]),
   );
   return {

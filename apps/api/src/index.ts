@@ -62,6 +62,13 @@ export {
   type AccountConversationPlanningTurnResult,
 } from "./conversation/run-account-conversation-planning-turn.js";
 export {
+  executeAccountConversationPlan,
+  AccountTurnPlanNotReadyError,
+  AccountTurnExecutionNotFoundError,
+  type ExecuteAccountConversationPlanDependencies,
+  type AccountConversationPlanExecutionResult,
+} from "./conversation/execute-account-conversation-plan.js";
+export {
   createOpenAIFoodDayTargetModel,
   OpenAIFoodDayTargetModelError,
   type OpenAIFoodDayTargetModelConfig,

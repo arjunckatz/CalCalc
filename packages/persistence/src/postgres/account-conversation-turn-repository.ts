@@ -134,6 +134,19 @@ export class PostgresAccountConversationTurnRepository {
     return row === undefined ? null : parseTurn(row);
   }
 
+  async findById(
+    userId: string,
+    turnId: string,
+  ): Promise<PersistedAccountTurn | null> {
+    const result = await this.executor.query(
+      `select ${columns} from public.conversation_turns
+       where user_id = $1 and id = $2`,
+      [userId, turnId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : parseTurn(row);
+  }
+
   async findExecutionCheckpoint(
     userId: string,
     turnId: string,
