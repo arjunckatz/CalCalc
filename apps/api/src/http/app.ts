@@ -19,6 +19,7 @@ import {
 } from "../auth/authorization.js";
 import { OpenAIFoodDayModelProtocolError } from "../agent/providers/openai/openai-food-day-turn-model.js";
 import type { FoodDayTurnRunner } from "../agent/turn/create-food-day-turn-runner.js";
+import type { DurableAccountConversationTurnRunner } from "../conversation/create-durable-account-conversation-turn-runner.js";
 import {
   FoodDayTurnExecutionError,
   FoodDayTurnValidationError,
@@ -49,6 +50,7 @@ import {
   foodDayTurnHandler,
   InvalidFoodDayTurnRequestError,
 } from "./food-day-turn.js";
+import { accountTurnHandler } from "./account-turn.js";
 
 export interface ApiAppDependencies {
   readonly authVerifier: AccessTokenVerifier;
@@ -56,6 +58,8 @@ export interface ApiAppDependencies {
   readonly transactionRunner: PostgresTransactionRunner;
   /** Omission keeps reusable/test app construction independent of model config. */
   readonly foodDayTurn?: FoodDayTurnRunner;
+  /** Production host supplies the durable account-level conversation runner. */
+  readonly accountTurn?: DurableAccountConversationTurnRunner;
 }
 
 const uuidPattern =
@@ -324,6 +328,16 @@ export function createApiApp(
       }>(
         dependencies.authVerifier,
         foodDayTurnHandler(dependencies.foodDayTurn),
+      ),
+    );
+  }
+  if (dependencies.accountTurn !== undefined) {
+    app.post<{ Body: unknown }>(
+      "/v1/turns",
+      { bodyLimit: 16 * 1024 },
+      authenticatedHandler<{ Body: unknown }>(
+        dependencies.authVerifier,
+        accountTurnHandler(dependencies.accountTurn),
       ),
     );
   }

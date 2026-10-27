@@ -555,8 +555,46 @@ bypasses execution. Before a plan commits, a retry may repeat read-only STATE
 preparation and planning. `TARGETS_REQUIRED`, ambiguous date, stale entry,
 DAYLESS, and clarification outcomes remain pending internal boundaries. This
 supports the food-targeted internal lifecycle only: no account-turn HTTP route
-exists, dayless action execution is not implemented, and the active FoodDay
-pointer/conversation version remain unchanged.
+existed at that checkpoint. Dayless action execution remains unimplemented.
+
+## Account-level conversation HTTP (M5A9A)
+
+`POST /v1/turns` requires one verified Supabase Bearer credential and a JSON
+body, bounded to 16 KiB:
+
+```json
+{
+  "message": "I had an apple today.",
+  "retryKey": "client-generated-stable-retry-key",
+  "calendar": {
+    "currentLocalDateTime": "2026-10-27T12:34:56+05:30",
+    "timeZone": "Asia/Kolkata"
+  }
+}
+```
+
+`calendar` may be omitted or null. When supplied, it must pass the existing
+offset/IANA-zone calendar acceptance boundary; there is no server-clock fallback.
+The exact accepted message and canonical calendar snapshot determine durable
+request meaning. The client must reuse its 1–128-character `retryKey` for a
+network retry; changing message/calendar meaning under that key returns a
+sanitized 409 conflict. Do not send ownership, FoodDay/entry/pointer IDs, or
+conversation versions: the server derives execution scope from verified identity
+and canonical state.
+
+A completed turn returns HTTP 200 with
+`{"status":"COMPLETED","response":"<exact stored assistant text>"}`. Exact
+completed retries return the stored response text, without model/tool replay.
+Pending states return an `error` envelope with HTTP 409 and a stable code:
+`CLARIFICATION_REQUIRED` (also includes the validated public `question`),
+`ACCOUNT_NUTRITION_TARGETS_REQUIRED`, `AMBIGUOUS_FOOD_DAY`,
+`ENTRY_REFERENCE_STALE`, or `DAYLESS_TURN_NOT_SUPPORTED`. Clarification
+continuation is not yet a completed lifecycle, and dayless execution is not
+supported by this runner. Malformed requests return 400; authentication returns
+401; provider/infrastructure failures have sanitized 5xx responses.
+
+The older `POST /v1/food-days/:foodDayId/turns` route remains available and
+unchanged. The web client has not migrated to the account-level route.
 
 ## Application-owned mutation identity
 

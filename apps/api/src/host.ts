@@ -4,6 +4,8 @@ import type { FastifyInstance } from "fastify";
 import { createOpenAIFoodDayTurnModel } from "./agent/providers/openai/openai-food-day-turn-model.js";
 import { createFoodDayTurnRunner } from "./agent/turn/create-food-day-turn-runner.js";
 import { createSupabaseAccessTokenVerifier } from "./auth/supabase-verifier.js";
+import { createDurableAccountConversationTurnRunner } from "./conversation/create-durable-account-conversation-turn-runner.js";
+import { createOpenAIFoodDayTargetModel } from "./conversation/providers/openai/openai-food-day-target-model.js";
 import { createApiApp } from "./http/app.js";
 import {
   createPostgresRuntime,
@@ -44,8 +46,13 @@ export function createApiHostFromEnvironment(
     supabaseUrl,
     supabasePublishableKey,
   });
+  const client = new OpenAI({ apiKey: openAIApiKey });
   const model = createOpenAIFoodDayTurnModel({
-    client: new OpenAI({ apiKey: openAIApiKey }),
+    client,
+    model: openAIModel,
+  });
+  const targetModel = createOpenAIFoodDayTargetModel({
+    client,
     model: openAIModel,
   });
   const app = createApiApp({
@@ -56,6 +63,12 @@ export function createApiHostFromEnvironment(
       postgres: postgres.pool,
       transactionRunner: postgres.transactionRunner,
       model,
+    }),
+    accountTurn: createDurableAccountConversationTurnRunner({
+      postgres: postgres.pool,
+      transactionRunner: postgres.transactionRunner,
+      targetModel,
+      foodDayModel: model,
     }),
   });
   return {

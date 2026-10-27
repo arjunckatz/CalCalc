@@ -33,6 +33,7 @@ describe("createApiHostFromEnvironment", () => {
         url: "/v1/food-days/:foodDayId/turns",
       }),
     ).toBe(true);
+    expect(host.app.hasRoute({ method: "POST", url: "/v1/turns" })).toBe(true);
     expect(host.postgres.pool.totalCount).toBe(0);
     await host.close();
   });

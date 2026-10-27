@@ -25,6 +25,11 @@ export { PostgresPoolTransactionRunner } from "./postgres/transaction-runner.js"
 export { createApiApp, type ApiAppDependencies } from "./http/app.js";
 export { createApiHostFromEnvironment, type ApiHost } from "./host.js";
 export {
+  createDurableAccountConversationTurnRunner,
+  type CreateDurableAccountConversationTurnRunnerDependencies,
+  type DurableAccountConversationTurnRunner,
+} from "./conversation/create-durable-account-conversation-turn-runner.js";
+export {
   buildRoutingContext,
   listExplicitDateRoutingCandidates,
   RoutingCandidateNotFoundError,
