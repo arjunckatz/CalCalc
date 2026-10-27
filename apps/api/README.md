@@ -596,6 +596,15 @@ supported by this runner. Malformed requests return 400; authentication returns
 The older `POST /v1/food-days/:foodDayId/turns` route remains available and
 unchanged. The web client has not migrated to the account-level route.
 
+The opt-in `corepack pnpm --filter @cal-calc/api test:integration:account-http`
+exercises the authenticated Fastify route with real PostgreSQL and the production
+account-turn composition. Set `DATABASE_URL` privately to an already-migrated
+database before running it. The test uses the production Bearer middleware and
+Supabase claims verifier with an injected claims source; it does **not** contact
+the Supabase Auth server. Semantic/planning/finalization models are deterministic
+fakes, so the test makes no OpenAI request. It creates isolated account fixtures
+and removes only their rows. This host proof is excluded from normal tests/CI.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`
