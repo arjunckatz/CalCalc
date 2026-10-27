@@ -547,6 +547,17 @@ commit, a retry may generate different prose (and repeat the optional read);
 after completion, every retry returns the exact stored response before plan or
 model work. No active FoodDay pointer or conversation version is advanced.
 
+M5A8E composes those durable boundaries in one internal account-turn runner:
+claim/replay and routing/materialization through M5A8B planning, unfinished
+plan slots through M5A8C, then M5A8D completion. A saved plan bypasses fresh
+execution preparation and the planning model; a fully checkpointed sequence
+bypasses execution. Before a plan commits, a retry may repeat read-only STATE
+preparation and planning. `TARGETS_REQUIRED`, ambiguous date, stale entry,
+DAYLESS, and clarification outcomes remain pending internal boundaries. This
+supports the food-targeted internal lifecycle only: no account-turn HTTP route
+exists, dayless action execution is not implemented, and the active FoodDay
+pointer/conversation version remain unchanged.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`

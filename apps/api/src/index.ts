@@ -75,6 +75,11 @@ export {
   type FinalizeAccountConversationTurnDependencies,
 } from "./conversation/finalize-account-conversation-turn.js";
 export {
+  runDurableAccountConversationTurn,
+  type RunDurableAccountConversationTurnDependencies,
+  type DurableAccountConversationTurnResult,
+} from "./conversation/run-durable-account-conversation-turn.js";
+export {
   createOpenAIFoodDayTargetModel,
   OpenAIFoodDayTargetModelError,
   type OpenAIFoodDayTargetModelConfig,
