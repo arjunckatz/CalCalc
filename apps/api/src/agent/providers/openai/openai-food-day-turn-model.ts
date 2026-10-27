@@ -9,6 +9,8 @@ import type {
   FoodDayModelDecision,
   FoodDayModelDecisionInput,
   FoodDayModelFinalizationInput,
+  DurableFoodDayFinalizationInput,
+  DurableFoodDayTurnFinalizer,
   FoodDayModelFinalizationStep,
   FoodDayTurnModel,
 } from "../../turn/food-day-turn-types.js";
@@ -61,11 +63,64 @@ export class OpenAIFoodDayModelProtocolError extends Error {
 export function createOpenAIFoodDayTurnModel({
   client,
   model,
-}: OpenAIFoodDayTurnModelConfig): FoodDayTurnModel {
+}: OpenAIFoodDayTurnModelConfig): FoodDayTurnModel &
+  DurableFoodDayTurnFinalizer {
   if (typeof model !== "string" || model.trim() === "") {
     throw new TypeError("An OpenAI model ID is required.");
   }
   const modelId = model.trim();
+  async function doFinalizeOrRead(
+    input: FoodDayModelFinalizationInput | DurableFoodDayFinalizationInput,
+  ): Promise<FoodDayModelFinalizationStep> {
+    const response = await client.responses.create({
+      model: modelId,
+      instructions: finalizeOrReadInstructions,
+      input: finalizationInput(input),
+      tools: continuationReadTools,
+      tool_choice: "auto",
+      parallel_tool_calls: false,
+      store: false,
+    });
+    assertUsableResponse(response);
+    const calls = response.output.filter(
+      (item) => item.type === "function_call",
+    );
+    if (calls.length === 0)
+      return { type: "FINAL", text: usableText(response.output_text) };
+    if (calls.length !== 1 || calls[0]?.name !== "GET_BODY_WEIGHT_HISTORY")
+      throw new OpenAIFoodDayModelProtocolError("UNSUPPORTED_FUNCTION");
+    let args: unknown;
+    try {
+      args = JSON.parse(calls[0].arguments);
+    } catch {
+      throw new OpenAIFoodDayModelProtocolError("INVALID_FUNCTION_ARGUMENTS");
+    }
+    if (
+      args === null ||
+      typeof args !== "object" ||
+      Array.isArray(args) ||
+      Object.keys(args).length !== 0
+    )
+      throw new OpenAIFoodDayModelProtocolError("INVALID_FUNCTION_ARGUMENTS");
+    return {
+      type: "READ_TOOL",
+      call: { name: "GET_BODY_WEIGHT_HISTORY", arguments: {} },
+    };
+  }
+  async function doFinalize(
+    input: FoodDayModelFinalizationInput | DurableFoodDayFinalizationInput,
+  ): Promise<string> {
+    const response = await client.responses.create({
+      model: modelId,
+      instructions: terminalFinalizationInstructions,
+      input: finalizationInput(input),
+      store: false,
+    });
+    assertUsableResponse(response);
+    if (response.output.some((item) => item.type === "function_call"))
+      throw new OpenAIFoodDayModelProtocolError("UNEXPECTED_FUNCTION_CALL");
+    return usableText(response.output_text);
+  }
   return {
     async decide(
       input: FoodDayModelDecisionInput,
@@ -102,61 +157,10 @@ export function createOpenAIFoodDayTurnModel({
       return { type: "FINAL", text: usableText(response.output_text) };
     },
 
-    async finalizeOrRead(
-      input: FoodDayModelFinalizationInput,
-    ): Promise<FoodDayModelFinalizationStep> {
-      const response = await client.responses.create({
-        model: modelId,
-        instructions: finalizeOrReadInstructions,
-        input: finalizationInput(input),
-        tools: continuationReadTools,
-        tool_choice: "auto",
-        parallel_tool_calls: false,
-        store: false,
-      });
-      assertUsableResponse(response);
-      const calls = response.output.filter(
-        (item) => item.type === "function_call",
-      );
-      if (calls.length === 0) {
-        return { type: "FINAL", text: usableText(response.output_text) };
-      }
-      if (calls.length !== 1 || calls[0]?.name !== "GET_BODY_WEIGHT_HISTORY") {
-        throw new OpenAIFoodDayModelProtocolError("UNSUPPORTED_FUNCTION");
-      }
-      let args: unknown;
-      try {
-        args = JSON.parse(calls[0].arguments);
-      } catch {
-        throw new OpenAIFoodDayModelProtocolError("INVALID_FUNCTION_ARGUMENTS");
-      }
-      if (
-        args === null ||
-        typeof args !== "object" ||
-        Array.isArray(args) ||
-        Object.keys(args).length !== 0
-      ) {
-        throw new OpenAIFoodDayModelProtocolError("INVALID_FUNCTION_ARGUMENTS");
-      }
-      return {
-        type: "READ_TOOL",
-        call: { name: "GET_BODY_WEIGHT_HISTORY", arguments: {} },
-      };
-    },
-
-    async finalize(input: FoodDayModelFinalizationInput): Promise<string> {
-      const response = await client.responses.create({
-        model: modelId,
-        instructions: terminalFinalizationInstructions,
-        input: finalizationInput(input),
-        store: false,
-      });
-      assertUsableResponse(response);
-      if (response.output.some((item) => item.type === "function_call")) {
-        throw new OpenAIFoodDayModelProtocolError("UNEXPECTED_FUNCTION_CALL");
-      }
-      return usableText(response.output_text);
-    },
+    finalizeOrRead: doFinalizeOrRead,
+    finalize: doFinalize,
+    finalizeDurableOrRead: doFinalizeOrRead,
+    finalizeDurable: doFinalize,
   };
 }
 
@@ -192,8 +196,17 @@ function decisionInput(
 }
 
 function finalizationInput(
-  input: FoodDayModelFinalizationInput,
+  input: FoodDayModelFinalizationInput | DurableFoodDayFinalizationInput,
 ): string | ResponseInputItem[] {
+  if ("stateAfterExecution" in input) {
+    return JSON.stringify({
+      canonicalFoodDayStateAfterExecution: stateForModel(
+        input.stateAfterExecution,
+      ),
+      userMessage: input.userMessage,
+      orderedExecutedActions: input.toolResults,
+    });
+  }
   const stateBeforeMutations = stateForModel(input.state);
   if (input.recentTranscript.length === 0) {
     return JSON.stringify({

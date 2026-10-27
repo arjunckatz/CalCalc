@@ -189,13 +189,16 @@ export async function runFoodDayTurn(
   return { response, state, toolResults };
 }
 
-function parseFinalizationStep(value: unknown): FoodDayModelFinalizationStep {
+export function parseFinalizationStep(
+  value: unknown,
+  preserveExactText = false,
+): FoodDayModelFinalizationStep {
   try {
     if (!isPlainObject(value)) throw new Error();
     if (hasOnlyDataFields(value, ["type", "text"]) && value.type === "FINAL") {
       return {
         type: "FINAL",
-        text: validText(value.text, "INVALID_FINAL_TEXT"),
+        text: validText(value.text, "INVALID_FINAL_TEXT", preserveExactText),
       };
     }
     if (
@@ -267,14 +270,15 @@ function inspectDecision(value: unknown): FoodDayModelDecision {
   throw new FoodDayTurnValidationError("INVALID_MODEL_DECISION");
 }
 
-function validText(
+export function validText(
   value: unknown,
   reason: FoodDayTurnValidationReason,
+  preserveExactText = false,
 ): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new FoodDayTurnValidationError(reason);
   }
-  return value.trim();
+  return preserveExactText ? value : value.trim();
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

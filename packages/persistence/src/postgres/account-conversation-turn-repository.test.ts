@@ -55,6 +55,24 @@ function key() {
 }
 
 describe("PostgresAccountConversationTurnRepository", () => {
+  it("reads only owner-scoped completion columns before hydrating a plan", async () => {
+    const executor = new ScriptedExecutor([
+      [{ status: "COMPLETED", response: "  Exact. ✅\n" }],
+    ]);
+    const result = await new PostgresAccountConversationTurnRepository(
+      executor,
+    ).findCompletionState(userId, id);
+    expect(result).toEqual({ status: "COMPLETED", response: "  Exact. ✅\n" });
+    expect(executor.calls[0]?.sql).toContain("select status, response");
+    expect(executor.calls[0]?.sql).not.toContain("execution_plan");
+    expect(executor.calls[0]?.values).toEqual([userId, id]);
+    await expect(
+      new PostgresAccountConversationTurnRepository(
+        new ScriptedExecutor([[{ status: "PENDING", response: "invalid" }]]),
+      ).findCompletionState(userId, id),
+    ).rejects.toThrow();
+  });
+
   it("reads a strict owner-scoped materialized date checkpoint without writing", async () => {
     const foodDayId = "20000000-0000-4000-8000-000000000001";
     const executor = new ScriptedExecutor([

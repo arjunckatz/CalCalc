@@ -574,6 +574,51 @@ describe("OpenAI FoodDay decision binding", () => {
 });
 
 describe("OpenAI FoodDay finalization binding", () => {
+  it("reconstructs durable account facts without provider state or transcript", async () => {
+    const { create, model } = setup(response("Done."));
+    const durable = {
+      userMessage: "  Log oats.  ",
+      stateAfterExecution: state,
+      toolResults: [
+        {
+          name: "LOG_FOOD" as const,
+          command: { displayName: "Oats" },
+          outcome: {
+            entryId: "40000000-0000-4000-8000-000000000001",
+            revision: 1,
+          },
+        },
+      ],
+    };
+    await model.finalizeDurableOrRead(durable);
+    const request = requestAt(create);
+    expect(JSON.parse(request.input as string)).toEqual({
+      canonicalFoodDayStateAfterExecution: state,
+      userMessage: "  Log oats.  ",
+      orderedExecutedActions: durable.toolResults,
+    });
+    expect(request.tools).toMatchObject([{ name: "GET_BODY_WEIGHT_HISTORY" }]);
+    expect(request).not.toHaveProperty("previous_response_id");
+    expect(request).not.toHaveProperty("conversation");
+    expect(request.store).toBe(false);
+    await model.finalizeDurable(durable);
+    expect(requestAt(create, 1)).not.toHaveProperty("tools");
+    expect(requestAt(create, 1).store).toBe(false);
+  });
+
+  it("rejects a function call in durable terminal finalization", async () => {
+    const { model } = setup(
+      response("Done", [functionCall("GET_BODY_WEIGHT_HISTORY", {})]),
+    );
+    await expect(
+      model.finalizeDurable({
+        userMessage: "History",
+        stateAfterExecution: state,
+        toolResults: [],
+      }),
+    ).rejects.toMatchObject({ reason: "UNEXPECTED_FUNCTION_CALL" });
+  });
+
   it("offers only the strict history read during first post-tool finalization", async () => {
     const { create, model } = setup(response("  Logged your weigh-in.  "));
     expect(

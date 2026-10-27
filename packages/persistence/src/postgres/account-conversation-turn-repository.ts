@@ -34,6 +34,12 @@ export interface AccountTurnExecutionCheckpoint {
   readonly materializedFoodDayId: string | null;
 }
 
+/** Minimal replay check: never hydrates plan JSON for a completed turn. */
+export interface AccountTurnCompletionState {
+  readonly status: "PENDING" | "COMPLETED";
+  readonly response: string | null;
+}
+
 export interface ClaimAccountTurnInput {
   readonly id: string;
   readonly userId: string;
@@ -145,6 +151,31 @@ export class PostgresAccountConversationTurnRepository {
     );
     const row = result.rows[0];
     return row === undefined ? null : parseTurn(row);
+  }
+
+  async findCompletionState(
+    userId: string,
+    turnId: string,
+  ): Promise<AccountTurnCompletionState | null> {
+    const result = await this.executor.query(
+      `select status, response from public.conversation_turns
+       where user_id = $1 and id = $2`,
+      [userId, turnId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) return null;
+    if (
+      !isRecord(row) ||
+      (row.status !== "PENDING" && row.status !== "COMPLETED") ||
+      (row.response !== null && typeof row.response !== "string") ||
+      (row.status === "COMPLETED" &&
+        (row.response === null || row.response.trim() === "")) ||
+      (row.status === "PENDING" && row.response !== null)
+    )
+      throw new TypeError(
+        "PostgreSQL returned an invalid account turn completion.",
+      );
+    return { status: row.status, response: row.response };
   }
 
   async findExecutionCheckpoint(

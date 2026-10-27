@@ -1,6 +1,7 @@
 import type { FoodDayState } from "../../state/build-food-day-state.js";
 import type { IdempotencyKey } from "../../mutations/mutation-identity.js";
 import type { FoodDayToolResult } from "../tools/execute-food-day-tool.js";
+import type { AccountTurnPlanAction, JsonObject } from "@cal-calc/persistence";
 
 /** Identity, target, and retry identity are supplied by trusted orchestration. */
 export interface FoodDayCalendarContext {
@@ -41,6 +42,17 @@ export interface FoodDayModelFinalizationInput extends FoodDayModelDecisionInput
   readonly toolResults: readonly FoodDayToolResult[];
 }
 
+/** Reconstructible, provider-neutral completed plan facts; no provider call IDs. */
+export interface DurableFoodDayFinalizationInput {
+  readonly userMessage: string;
+  readonly stateAfterExecution: FoodDayState;
+  readonly toolResults: readonly {
+    readonly name: Exclude<AccountTurnPlanAction, "DIRECT_RESPONSE">;
+    readonly command: JsonObject;
+    readonly outcome: JsonObject;
+  }[];
+}
+
 export type FoodDayModelFinalizationStep =
   | { readonly type: "FINAL"; readonly text: string }
   | {
@@ -59,6 +71,13 @@ export interface FoodDayTurnModel {
   ): Promise<FoodDayModelFinalizationStep>;
   /** Tool-free terminal response, used at most once after a continuation read. */
   finalize(input: FoodDayModelFinalizationInput): Promise<string>;
+}
+
+export interface DurableFoodDayTurnFinalizer {
+  finalizeDurableOrRead(
+    input: DurableFoodDayFinalizationInput,
+  ): Promise<FoodDayModelFinalizationStep>;
+  finalizeDurable(input: DurableFoodDayFinalizationInput): Promise<string>;
 }
 
 export interface FoodDayTurnResult {

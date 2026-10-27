@@ -534,6 +534,19 @@ without checkpointing the failed step. This boundary does not plan, finalize,
 complete the turn, or update the account's active FoodDay/version. Real database
 proof is opt-in via `test:integration:account-plan` after the forward migration.
 
+M5A8D finalizes a pending account turn only from its immutable plan and a
+complete, contiguous prefix of durable step results. A direct-response plan
+commits its exact saved text without model work. For a tool plan, the finalizer
+reconstructs ordered model-safe commands/effects, reads a fresh canonical
+FoodDay STATE solely for response context, and uses the existing bounded
+finalize-or-one-history-read protocol. It does not load a potentially newer
+account transcript or re-execute plan steps. The existing pending-to-completed
+CAS stores response and status atomically; concurrent finalizers return the
+first stored response. If a model response is produced but completion does not
+commit, a retry may generate different prose (and repeat the optional read);
+after completion, every retry returns the exact stored response before plan or
+model work. No active FoodDay pointer or conversation version is advanced.
+
 ## Application-owned mutation identity
 
 `deriveMutationIdentity({ trustedUserId, action, idempotencyKey, semanticPayload })`

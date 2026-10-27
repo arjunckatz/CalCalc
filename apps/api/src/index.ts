@@ -69,6 +69,12 @@ export {
   type AccountConversationPlanExecutionResult,
 } from "./conversation/execute-account-conversation-plan.js";
 export {
+  finalizeAccountConversationTurn,
+  AccountTurnFinalizationNotReadyError,
+  AccountTurnFinalizationIntegrityError,
+  type FinalizeAccountConversationTurnDependencies,
+} from "./conversation/finalize-account-conversation-turn.js";
+export {
   createOpenAIFoodDayTargetModel,
   OpenAIFoodDayTargetModelError,
   type OpenAIFoodDayTargetModelConfig,
@@ -131,6 +137,8 @@ export type {
   FoodDayModelDecision,
   FoodDayModelDecisionInput,
   FoodDayModelFinalizationInput,
+  DurableFoodDayFinalizationInput,
+  DurableFoodDayTurnFinalizer,
   FoodDayModelFinalizationStep,
   FoodDayTurnInput,
   FoodDayTurnModel,
