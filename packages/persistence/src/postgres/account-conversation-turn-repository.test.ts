@@ -169,6 +169,7 @@ describe("PostgresAccountConversationTurnRepository", () => {
     const conversation = {
       user_id: userId,
       active_food_day_id: null,
+      active_food_day_turn_id: null,
       version: 0,
       created_at: timestamp,
       updated_at: timestamp,

@@ -2,6 +2,7 @@ import type { AccountTurnPlan } from "@cal-calc/persistence";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseIdempotencyKey } from "../mutations/mutation-identity.js";
+import { advanceActiveFoodDayFromCompletedTurn } from "./advance-active-food-day-from-completed-turn.js";
 import { executeAccountConversationPlan } from "./execute-account-conversation-plan.js";
 import { finalizeAccountConversationTurn } from "./finalize-account-conversation-turn.js";
 import { runAccountConversationPlanningTurn } from "./run-account-conversation-planning-turn.js";
@@ -19,6 +20,15 @@ vi.mock("./execute-account-conversation-plan.js", () => ({
 vi.mock("./finalize-account-conversation-turn.js", () => ({
   finalizeAccountConversationTurn: vi.fn(),
 }));
+vi.mock(
+  "./advance-active-food-day-from-completed-turn.js",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("./advance-active-food-day-from-completed-turn.js")
+    >()),
+    advanceActiveFoodDayFromCompletedTurn: vi.fn(),
+  }),
+);
 
 const userId = "10000000-0000-4000-8000-000000000001";
 const turnId = "20000000-0000-4000-8000-000000000001";
@@ -55,9 +65,18 @@ function harness(plan: AccountTurnPlan = toolPlan, resultCount = 0) {
     }),
   };
   const dependencies = {
-    planning: {},
+    planning: {
+      turns: {
+        findByKey: vi.fn(async () => ({
+          id: turnId,
+          status: "COMPLETED",
+          response: "  First winner. ✅\n",
+        })),
+      },
+    },
     execution: {},
     finalization: { stepResults },
+    pointer: {},
   } as unknown as RunDurableAccountConversationTurnDependencies;
   vi.mocked(runAccountConversationPlanningTurn).mockImplementation(async () => {
     events.push("planning-boundary");
@@ -84,6 +103,7 @@ beforeEach(() => {
   vi.mocked(runAccountConversationPlanningTurn).mockReset();
   vi.mocked(executeAccountConversationPlan).mockReset();
   vi.mocked(finalizeAccountConversationTurn).mockReset();
+  vi.mocked(advanceActiveFoodDayFromCompletedTurn).mockReset();
 });
 
 describe("internal durable account-turn lifecycle", () => {
@@ -106,6 +126,10 @@ describe("internal durable account-turn lifecycle", () => {
     );
     expect(finalizeAccountConversationTurn).toHaveBeenCalledWith(
       h.dependencies.finalization,
+      { trustedUserId: userId, turnId },
+    );
+    expect(advanceActiveFoodDayFromCompletedTurn).toHaveBeenCalledWith(
+      h.dependencies.pointer,
       { trustedUserId: userId, turnId },
     );
   });
@@ -136,6 +160,7 @@ describe("internal durable account-turn lifecycle", () => {
     expect(h.stepResults.listForTurn).not.toHaveBeenCalled();
     expect(executeAccountConversationPlan).not.toHaveBeenCalled();
     expect(finalizeAccountConversationTurn).not.toHaveBeenCalled();
+    expect(advanceActiveFoodDayFromCompletedTurn).toHaveBeenCalledTimes(1);
   });
 
   it("sends a durable direct response straight to completion", async () => {
@@ -145,6 +170,18 @@ describe("internal durable account-turn lifecycle", () => {
       response: "  Saved. ✅\n",
     });
     expect(h.events).toEqual(["planning-boundary", "finalization-boundary"]);
+  });
+
+  it("returns the exact completed response when an older pointer attempt loses", async () => {
+    const h = harness(toolPlan, 2);
+    vi.mocked(advanceActiveFoodDayFromCompletedTurn).mockResolvedValueOnce(
+      "UNCHANGED",
+    );
+    expect(await h.run()).toEqual({
+      kind: "COMPLETED",
+      response: "  Saved. ✅\n",
+    });
+    expect(advanceActiveFoodDayFromCompletedTurn).toHaveBeenCalledTimes(1);
   });
 
   it("skips execution entirely when every step result is durable", async () => {
@@ -186,6 +223,7 @@ describe("internal durable account-turn lifecycle", () => {
     expect(h.stepResults.listForTurn).not.toHaveBeenCalled();
     expect(executeAccountConversationPlan).not.toHaveBeenCalled();
     expect(finalizeAccountConversationTurn).not.toHaveBeenCalled();
+    expect(advanceActiveFoodDayFromCompletedTurn).not.toHaveBeenCalled();
   });
 
   it("does not finalize after a typed execution conflict", async () => {
@@ -273,6 +311,26 @@ describe("internal durable account-turn lifecycle", () => {
     });
     expect(h.stepResults.listForTurn).toHaveBeenCalledTimes(1);
     expect(finalizeAccountConversationTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("repairs the advisory pointer on completed replay after completion-to-pointer failure", async () => {
+    const h = harness(toolPlan, 2);
+    vi.mocked(advanceActiveFoodDayFromCompletedTurn).mockRejectedValueOnce(
+      new Error("pointer database unavailable"),
+    );
+    await expect(h.run()).rejects.toThrow("pointer database unavailable");
+    expect(finalizeAccountConversationTurn).toHaveBeenCalledTimes(1);
+    vi.mocked(runAccountConversationPlanningTurn).mockResolvedValueOnce({
+      kind: "COMPLETED_REPLAY",
+      response: "  Saved. ✅\n",
+    });
+    expect(await h.run()).toEqual({
+      kind: "COMPLETED",
+      response: "  Saved. ✅\n",
+    });
+    expect(advanceActiveFoodDayFromCompletedTurn).toHaveBeenCalledTimes(2);
+    expect(finalizeAccountConversationTurn).toHaveBeenCalledTimes(1);
+    expect(executeAccountConversationPlan).not.toHaveBeenCalled();
   });
 
   it("concurrent invocations converge on the persisted completion response", async () => {

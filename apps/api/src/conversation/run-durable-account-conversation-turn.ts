@@ -8,11 +8,18 @@ import type {
 } from "./run-account-conversation-planning-turn.js";
 import { runAccountConversationPlanningTurn } from "./run-account-conversation-planning-turn.js";
 import type { RunAccountConversationTurnRequest } from "./run-account-conversation-turn.js";
+import { deriveAccountTurnIdentity } from "./account-turn.js";
+import {
+  ActiveFoodDayPointerIntegrityError,
+  advanceActiveFoodDayFromCompletedTurn,
+  type AdvanceActiveFoodDayDependencies,
+} from "./advance-active-food-day-from-completed-turn.js";
 
 export interface RunDurableAccountConversationTurnDependencies {
   readonly planning: RunAccountConversationPlanningTurnDependencies;
   readonly execution: ExecuteAccountConversationPlanDependencies;
   readonly finalization: FinalizeAccountConversationTurnDependencies;
+  readonly pointer: AdvanceActiveFoodDayDependencies;
 }
 
 export type DurableAccountConversationTurnResult =
@@ -34,6 +41,29 @@ export async function runDurableAccountConversationTurn(
     request,
   );
   if (planned.kind === "COMPLETED_REPLAY") {
+    // The completed row itself is the repair checkpoint for a crash after
+    // response COMMIT but before advisory pointer advancement.
+    const identity = deriveAccountTurnIdentity({
+      ...request,
+      calendarContext:
+        request.calendarContext === null
+          ? null
+          : {
+              currentLocalDateTime:
+                request.calendarContext.currentLocalDateTime,
+              timeZone: request.calendarContext.timeZone,
+            },
+    });
+    const turn = await dependencies.planning.turns.findByKey(
+      identity.userId,
+      identity.turnKey,
+    );
+    if (turn === null || turn.status !== "COMPLETED")
+      throw new ActiveFoodDayPointerIntegrityError();
+    await advanceActiveFoodDayFromCompletedTurn(dependencies.pointer, {
+      trustedUserId: identity.userId,
+      turnId: turn.id,
+    });
     return { kind: "COMPLETED", response: planned.response };
   }
   if (planned.kind !== "PLAN_READY") return planned;
@@ -58,6 +88,10 @@ export async function runDurableAccountConversationTurn(
         input,
       );
       if (executed.kind === "COMPLETED_REPLAY") {
+        await advanceActiveFoodDayFromCompletedTurn(
+          dependencies.pointer,
+          input,
+        );
         return { kind: "COMPLETED", response: executed.response };
       }
     }
@@ -66,5 +100,6 @@ export async function runDurableAccountConversationTurn(
     dependencies.finalization,
     input,
   );
+  await advanceActiveFoodDayFromCompletedTurn(dependencies.pointer, input);
   return { kind: "COMPLETED", response: completed.response };
 }

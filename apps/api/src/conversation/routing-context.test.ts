@@ -118,6 +118,7 @@ function fixtures(
       : {
           userId,
           activeFoodDayId: options.active.foodDay.id,
+          activeFoodDayTurnId: null,
           version: 1,
           createdAt: "",
           updatedAt: "",

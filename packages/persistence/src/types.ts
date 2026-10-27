@@ -99,6 +99,8 @@ export interface PersistedFoodDayTurnResult {
 export interface PersistedConversation {
   readonly userId: string;
   readonly activeFoodDayId: string | null;
+  /** Completed qualifying turn that last advanced the advisory pointer. */
+  readonly activeFoodDayTurnId: string | null;
   readonly version: number;
   readonly createdAt: string;
   readonly updatedAt: string;
