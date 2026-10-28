@@ -5,6 +5,8 @@ import {
   FoodDayTurnIdempotencyConflictError,
   FoodEntryNotFoundError,
   FoodEntryRevisionConflictError,
+  AccountNutritionTargetsVersionConflictError,
+  PostgresAccountNutritionTargetsRepository,
   PostgresFoodDayRepository,
   SemanticOperationIdempotencyConflictError,
   SemanticOperationStateConflictError,
@@ -51,6 +53,12 @@ import {
   InvalidFoodDayTurnRequestError,
 } from "./food-day-turn.js";
 import { accountTurnHandler } from "./account-turn.js";
+import {
+  getAccountNutritionTargetsHandler,
+  InvalidAccountNutritionTargetsRequestError,
+  putAccountNutritionTargetsHandler,
+} from "./account-nutrition-targets.js";
+import { InvalidSetAccountNutritionTargetsCommandError } from "../mutations/set-account-nutrition-targets.js";
 
 export interface ApiAppDependencies {
   readonly authVerifier: AccessTokenVerifier;
@@ -81,6 +89,9 @@ export function createApiApp(
     },
   });
   const foodDays = new PostgresFoodDayRepository(dependencies.postgres);
+  const accountTargets = new PostgresAccountNutritionTargetsRepository(
+    dependencies.postgres,
+  );
 
   app.setErrorHandler((error, _request, reply) => {
     const failure =
@@ -134,6 +145,17 @@ export function createApiApp(
       });
     }
     if (
+      failure instanceof InvalidAccountNutritionTargetsRequestError ||
+      failure instanceof InvalidSetAccountNutritionTargetsCommandError
+    ) {
+      return reply.code(400).send({
+        error: {
+          code: "INVALID_ACCOUNT_NUTRITION_TARGETS",
+          message: "Invalid account nutrition targets request.",
+        },
+      });
+    }
+    if (
       failure instanceof MutationIdentityError &&
       failure.reason === "INVALID_IDEMPOTENCY_KEY"
     ) {
@@ -160,6 +182,14 @@ export function createApiApp(
         error: {
           code: "FOOD_ENTRY_REVISION_CONFLICT",
           message: "Food entry revision conflict.",
+        },
+      });
+    }
+    if (failure instanceof AccountNutritionTargetsVersionConflictError) {
+      return reply.code(409).send({
+        error: {
+          code: "ACCOUNT_NUTRITION_TARGET_VERSION_CONFLICT",
+          message: "Account nutrition target version conflict.",
         },
       });
     }
@@ -290,6 +320,21 @@ export function createApiApp(
           .code(result.disposition === "CREATED" ? 201 : 200)
           .send(result);
       },
+    ),
+  );
+  app.get(
+    "/v1/account/nutrition-targets",
+    authenticatedHandler(
+      dependencies.authVerifier,
+      getAccountNutritionTargetsHandler(accountTargets),
+    ),
+  );
+  app.put(
+    "/v1/account/nutrition-targets",
+    { bodyLimit: 16 * 1024 },
+    authenticatedHandler(
+      dependencies.authVerifier,
+      putAccountNutritionTargetsHandler(dependencies.transactionRunner),
     ),
   );
   app.post(

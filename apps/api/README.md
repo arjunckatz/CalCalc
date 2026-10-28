@@ -596,6 +596,37 @@ supported by this runner. Malformed requests return 400; authentication returns
 The older `POST /v1/food-days/:foodDayId/turns` route remains available and
 unchanged. The web client has not migrated to the account-level route.
 
+## Account nutrition-target defaults (M5A10A)
+
+`GET /v1/account/nutrition-targets` and `PUT /v1/account/nutrition-targets`
+require a verified Supabase Bearer credential. GET returns HTTP 200 with either
+`{"status":"NOT_CONFIGURED"}` or a configured value such as
+`{"status":"CONFIGURED","calorieTarget":"685.1075","proteinTarget":"41.0025","version":0}`.
+Targets are exact decimal strings; absence is never interpreted as zero.
+
+PUT accepts only the full two-target configuration and a stable retry key in
+JSON, for example:
+
+```json
+{
+  "retryKey": "client-generated-stable-key",
+  "expectedVersion": null,
+  "calorieTarget": "685.1075",
+  "proteinTarget": "41.0025"
+}
+```
+
+Use `expectedVersion: null` only for initial configuration. An update sends
+the current integer version and advances it once through compare-and-swap.
+Both application and durable replay return HTTP 200 with the saved configured
+value. Reuse the same retry key and request meaning after an uncertain response;
+changed meaning under that key or a stale version returns a sanitized 409.
+Invalid requests return 400 and missing authentication returns 401. The route
+does not accept caller ownership or FoodDay identifiers. These mutable account
+defaults are snapshotted only when a future FoodDay is created; changing them
+never rewrites existing FoodDays, FoodEntries, or completed turns. The web
+client has not yet adopted these endpoints.
+
 The opt-in `corepack pnpm --filter @cal-calc/api test:integration:account-http`
 exercises the authenticated Fastify route with real PostgreSQL and the production
 account-turn composition. Set `DATABASE_URL` privately to an already-migrated
